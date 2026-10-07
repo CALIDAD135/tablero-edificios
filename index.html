@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b4f9e">
+<title>Control de Edificios | IES</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/edificios.css">
+<!-- Librerías (mismas versiones que Control Vehicular) -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+</head>
+<body>
+
+<!-- ======================= ACCESO ======================= -->
+<div class="login" id="login">
+  <div class="login-box">
+    <div class="login-marca">
+      <img id="loginLogo" alt="IES">
+      <div><h1>Control de Edificios</h1><p>Coordinación de Activos Fijos y Control Vehicular</p></div>
+    </div>
+    <div class="roles" role="group" aria-label="Rol de acceso">
+      <button type="button" class="rol" data-rol="admin" aria-pressed="false">Administrador<small>Coordinación</small></button>
+      <button type="button" class="rol" data-rol="auxiliar" aria-pressed="false">Auxiliar<small>Captura diaria</small></button>
+      <button type="button" class="rol" data-rol="gerencia" aria-pressed="false">Gerencia<small>Solo lectura</small></button>
+    </div>
+    <label class="fl"><span>Código de acceso</span><input type="password" id="loginCodigo" autocomplete="off" inputmode="numeric" placeholder="Seleccione su rol e ingrese su código"></label>
+    <div class="login-err" id="loginErr" role="alert"></div>
+    <button type="button" class="btn btn-primary btn-grande" id="loginBtn">Entrar</button>
+    <div class="login-st" id="loginStatus">Conectando con Firebase…</div>
+  </div>
+</div>
+
+<!-- ======================= ENCABEZADO ======================= -->
+<header class="top">
+  <div class="top-in">
+    <div class="top-marca">
+      <img id="topLogo" alt="IES">
+      <div><h1>Control de Edificios</h1><p>Instalaciones IES Cancún. Activos Fijos</p></div>
+    </div>
+    <div class="top-acc">
+      <span class="sync sync-off" id="syncBadge">Conectando</span>
+      <span class="rol-badge" id="rolBadge">—</span>
+      <button type="button" class="btn btn-sm" id="btnExcel" title="Descarga todos los registros en un libro de Excel">Exportar Excel</button>
+      <button type="button" class="btn btn-sm btn-ghost" id="btnSalir">Salir</button>
+    </div>
+  </div>
+  <nav class="nav" role="tablist" aria-label="Módulos">
+    <button class="nav-tab" role="tab" data-v="tablero" aria-selected="true">Tablero</button>
+    <button class="nav-tab" role="tab" data-v="incidencias">Incidencias <span class="cnt" hidden></span></button>
+    <button class="nav-tab" role="tab" data-v="tareas">Tareas PHVA</button>
+    <button class="nav-tab" role="tab" data-v="mantenimientos">Mantenimientos <span class="cnt" hidden></span></button>
+    <button class="nav-tab" role="tab" data-v="ordenes">Órdenes de trabajo <span class="cnt" hidden></span></button>
+    <button class="nav-tab" role="tab" data-v="solicitudes">Solicitudes <span class="cnt" hidden></span></button>
+    <button class="nav-tab" role="tab" data-v="indicadores">Indicadores</button>
+    <button class="nav-tab" role="tab" data-v="bitacora" hidden>Bitácora</button>
+  </nav>
+</header>
+
+<main>
+  <div class="cargando" id="cargando">Cargando datos de Firebase…</div>
+
+  <!-- ============ MÓDULO 1: TABLERO DE EDIFICIOS ============ -->
+  <section class="vista" id="v-tablero">
+    <div class="vista-head">
+      <div><h2>Estado de las instalaciones</h2><p>Cada módulo es una oficina o área. El color indica su condición en tiempo real; selecciónelo para ver detalle, responsable e historial.</p></div>
+      <div class="filtros">
+        <input type="search" id="tbBuscar" placeholder="Buscar oficina o responsable" aria-label="Buscar oficina o responsable">
+        <select id="tbDepto" aria-label="Departamento"></select>
+        <button type="button" class="btn" id="tbNuevaArea">Agregar área</button>
+      </div>
+    </div>
+    <div id="tbSemilla"></div>
+    <div class="kpis" id="tbKpis"></div>
+    <div class="sitio-wrap">
+      <div class="sitio" id="tbSitio"></div>
+      <div class="suelo" aria-hidden="true"></div>
+      <div class="leyenda">
+        <span><i class="l-ok"></i>Sin pendientes</span>
+        <span><i class="l-inc"></i>Incidencia abierta</span>
+        <span><i class="l-ot"></i>Orden de trabajo en atención</span>
+        <span><i class="l-sla"></i>Orden fuera de SLA</span>
+        <span><i class="l-mv"></i>Mantenimiento vencido</span>
+        <span id="tbGeneral"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MÓDULO 2A: INCIDENCIAS ============ -->
+  <section class="vista" id="v-incidencias" hidden>
+    <div class="vista-head">
+      <div><h2>Incidencias</h2><p>Registro de fallas y necesidades por categoría. Una incidencia se atiende al convertirla en orden de trabajo.</p></div>
+      <button type="button" class="btn btn-primary" id="incNueva">Reportar incidencia</button>
+    </div>
+    <div class="kpis" id="incKpis"></div>
+    <div class="g2">
+      <div class="bloque"><h3>Por categoría</h3><div class="chart" id="incChCat"></div></div>
+      <div class="bloque"><h3>Por edificio</h3><div class="chart" id="incChEdif"></div></div>
+    </div>
+    <div class="bloque" style="margin-top:16px">
+      <div class="bloque-head"><h3>Registro de incidencias <span class="muted" id="incConteo"></span></h3>
+        <div class="filtros">
+          <input type="search" id="incBuscar" placeholder="Folio, oficina o descripción" aria-label="Buscar incidencia">
+          <select id="incEstatus" aria-label="Estatus"></select><select id="incCat" aria-label="Categoría"></select>
+          <select id="incEdif" aria-label="Edificio"></select><select id="incPrio" aria-label="Prioridad"></select>
+        </div></div>
+      <div class="tblwrap" id="incTabla"></div>
+    </div>
+  </section>
+
+  <!-- ============ MÓDULO 2B: KANBAN PHVA ============ -->
+  <section class="vista" id="v-tareas" hidden>
+    <div class="vista-head">
+      <div><h2>Tareas de cuadrillas</h2><p>Seguimiento diario en el ciclo Planear, Hacer, Verificar y Actuar. Arrastre las tarjetas entre fases o use las flechas en pantallas táctiles.</p></div>
+      <div class="filtros">
+        <select id="tkCuadrilla" aria-label="Cuadrilla"></select>
+        <select id="tkPeriodo" aria-label="Periodo">
+          <option value="todas">Todas las fechas</option>
+          <option value="hoy">Para hoy y vencidas</option>
+          <option value="semana">Próximos 7 días y vencidas</option>
+        </select>
+        <label class="chk" style="margin:0"><input type="checkbox" id="tkArchivadas"> Ver cerradas</label>
+        <button type="button" class="btn btn-primary" id="tkNueva">Nueva tarea</button>
+      </div>
+    </div>
+    <p class="tk-resumen" id="tkResumen"></p>
+    <div class="tk-tablero" id="tkTablero"></div>
+  </section>
+
+  <!-- ============ MÓDULO 3: MANTENIMIENTOS PROGRAMADOS ============ -->
+  <section class="vista" id="v-mantenimientos" hidden>
+    <div class="vista-head">
+      <div><h2>Mantenimientos programados</h2><p>Programa preventivo y correctivo por rubro. La próxima fecha se recalcula con cada ejecución registrada.</p></div>
+      <div class="filtros">
+        <select id="mtTipo" aria-label="Tipo"><option value="">Preventivo y correctivo</option><option>Preventivo</option><option>Correctivo</option></select>
+        <select id="mtEstado" aria-label="Estado"></select>
+        <select id="mtAnio" aria-label="Año del programa"></select>
+        <button type="button" class="btn btn-primary" id="mtNuevo">Nuevo plan</button>
+      </div>
+    </div>
+    <div class="chips" id="mtRubros"></div>
+    <div class="kpis" id="mtKpis"></div>
+    <div class="bloque"><h3>Planes de mantenimiento</h3><div class="tblwrap" id="mtTabla"></div></div>
+    <div class="bloque"><h3>Programa anual</h3>
+      <div class="tblwrap" id="mtPrograma"></div>
+      <div class="prog-ley"><span><i class="c-pl"></i>Programado</span><span><i class="c-ej"></i>Ejecutado</span><span><i class="c-nc"></i>Programado sin ejecución en el mes</span></div>
+    </div>
+  </section>
+
+  <!-- ============ MÓDULO 5: ÓRDENES DE TRABAJO ============ -->
+  <section class="vista" id="v-ordenes" hidden>
+    <div class="vista-head">
+      <div><h2>Órdenes de trabajo</h2><p>El SLA corre desde el levantamiento hasta la culminación. Al entregar con ambas firmas se genera el reporte en PDF.</p></div>
+      <button type="button" class="btn btn-primary" id="otNueva">Nuevo levantamiento</button>
+    </div>
+    <div class="kpis" id="otKpis"></div>
+    <div class="bloque">
+      <div class="bloque-head"><h3>Órdenes <span class="muted" id="otConteo"></span></h3>
+        <div class="filtros">
+          <input type="search" id="otBuscar" placeholder="Folio, oficina, solicitante" aria-label="Buscar orden">
+          <select id="otEstatus" aria-label="Estatus"></select><select id="otCat" aria-label="Categoría"></select><select id="otEdif" aria-label="Edificio"></select>
+        </div></div>
+      <div class="tblwrap" id="otTabla"></div>
+    </div>
+  </section>
+
+  <!-- ============ MÓDULO 6: SOLICITUDES ============ -->
+  <section class="vista" id="v-solicitudes" hidden>
+    <div class="vista-head">
+      <div><h2>Solicitudes de usuarios</h2><p>Tickets recibidos desde el formulario público. Revíselos y conviértalos en orden de trabajo.</p></div>
+    </div>
+    <div class="bloque">
+      <div class="liga-panel">
+        <code id="solUrl"></code>
+        <button type="button" class="btn btn-primary" id="solLiga">Compartir liga y QR</button>
+        <button type="button" class="btn" id="solLigaArea">QR por área</button>
+      </div>
+    </div>
+    <div class="kpis" id="solKpis"></div>
+    <div class="bloque">
+      <div class="bloque-head"><h3>Bandeja <span class="muted" id="solConteo"></span></h3>
+        <div class="filtros"><input type="search" id="solBuscar" placeholder="Folio, solicitante u oficina" aria-label="Buscar solicitud"><select id="solEstado" aria-label="Estado"></select></div></div>
+      <div class="tblwrap" id="solTabla"></div>
+    </div>
+  </section>
+
+  <!-- ============ MÓDULO 4: INDICADORES ============ -->
+  <section class="vista" id="v-indicadores" hidden>
+    <div class="vista-head">
+      <div><h2>Inversión en instalaciones</h2><p>Costos de órdenes de trabajo (materiales y mano de obra) y de mantenimientos programados.</p></div>
+      <div class="filtros"><select id="kpAnio" aria-label="Año"></select><select id="kpEdif" aria-label="Edificio"></select><select id="kpDepto" aria-label="Departamento"></select></div>
+    </div>
+    <div class="kpis" id="kpKpis"></div>
+    <div class="bloque"><h3>Inversión mensual por concepto</h3><div class="chart alto" id="kpChMes"></div></div>
+    <div class="g2">
+      <div class="bloque"><h3>Por edificio</h3><div class="chart" id="kpChEdif"></div></div>
+      <div class="bloque"><h3>Por departamento</h3><div class="chart" id="kpChDepto"></div></div>
+    </div>
+    <div class="g2">
+      <div class="bloque"><h3>Por categoría o rubro</h3><div class="chart" id="kpChCat"></div></div>
+      <div class="bloque"><h3>Movimientos de mayor importe</h3><div class="tblwrap" id="kpTop" style="max-height:300px"></div></div>
+    </div>
+
+    <div class="vista-head" style="margin-top:28px">
+      <div><h2>Consumo de servicios</h2><p>Lecturas y facturación mensual. Una barra roja indica consumo superior al promedio de los tres meses previos.</p></div>
+      <div class="filtros"><select id="csAnio" aria-label="Año"></select><select id="csMedidor" aria-label="Medidor"></select><button type="button" class="btn btn-primary" id="csNuevo">Capturar consumo</button></div>
+    </div>
+    <div class="kpis" id="csKpis"></div>
+    <div class="g2">
+      <div class="bloque"><h3>Agua (m³)</h3><div class="chart alto" id="csChAgua"></div></div>
+      <div class="bloque"><h3>Energía eléctrica (kWh)</h3><div class="chart alto" id="csChEnergia"></div></div>
+    </div>
+    <div class="bloque"><h3>Capturas del año</h3><div class="tblwrap" id="csTabla"></div></div>
+  </section>
+
+  <!-- ============ BITÁCORA ============ -->
+  <section class="vista" id="v-bitacora" hidden>
+    <div class="vista-head">
+      <div><h2>Bitácora de cambios</h2><p>Últimos 500 movimientos con fecha, rol y detalle (trazabilidad de información documentada).</p></div>
+      <div class="filtros"><input type="search" id="bitBuscar" placeholder="Buscar en la bitácora" aria-label="Buscar en bitácora"><select id="bitEntidad" aria-label="Entidad"></select></div>
+    </div>
+    <div class="bloque"><div class="tblwrap" id="bitTabla"></div></div>
+  </section>
+</main>
+
+<!-- Panel lateral de detalle de área -->
+<aside class="drawer" id="drawer" aria-hidden="true" aria-labelledby="drawerTitulo">
+  <div class="drawer-head"><h2 id="drawerTitulo"></h2><button type="button" class="btn-ico" id="drawerCerrar" aria-label="Cerrar panel">✕</button></div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<!-- Reporte de entrega (vista dividida) -->
+<div class="rp-view" id="rpView" role="dialog" aria-modal="true" aria-labelledby="rpTitulo">
+  <div class="rp-top">
+    <div><h2 id="rpTitulo">Reporte de entrega de trabajos realizados</h2><p>Ajuste el contenido a la izquierda; la hoja muestra el documento tal como se descargará.</p></div>
+    <span class="rp-chip" id="rpFolio">—</span>
+    <div class="rp-top-r">
+      <button type="button" class="btn btn-primary btn-sm" id="rpPdf">Descargar PDF</button>
+      <button type="button" class="btn btn-sm" id="rpImprimir">Imprimir</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="rpCerrar">Cerrar</button>
+    </div>
+  </div>
+  <div class="rp-body">
+    <div class="rp-left" id="rpLeft"></div>
+    <div class="rp-stage" id="rpStage"><div class="rp-scaler" id="rpScaler"><div class="rp-sheet" id="rpSheet"></div></div></div>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox"><button type="button" class="btn" id="lbCerrar">Cerrar</button><img alt=""><div class="lb-cap"></div></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<button type="button" class="fab" id="fab">Levantamiento</button>
+
+<!-- Módulos del sistema -->
+<script src="js/config.js"></script>
+<script src="js/logo.js"></script>
+<script src="js/firebase-db.js"></script>
+<script src="js/ui-core.js"></script>
+<script src="js/mod-tablero.js"></script>
+<script src="js/mod-incidencias.js"></script>
+<script src="js/mod-mantenimientos.js"></script>
+<script src="js/mod-ot.js"></script>
+<script src="js/mod-solicitudes.js"></script>
+<script src="js/mod-kpis.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

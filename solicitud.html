@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b4f9e">
+<title>Solicitud de mantenimiento | IES Activos Fijos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/edificios.css">
+<style>
+  body { background: linear-gradient(180deg, #e7f1fc 0, #eef5fd 320px) }
+  .pub { max-width: 680px; margin: 0 auto; padding: 22px 16px 60px; padding-top: max(22px, env(safe-area-inset-top)) }
+  .pub-h { display: flex; align-items: center; gap: 14px; margin-bottom: 18px }
+  .pub-h img { width: 56px; height: auto }
+  .pub-h small { display: block; font-size: 12.5px; color: var(--muted) }
+  .pub-h h1 { font-size: 23px; line-height: 1.15; color: var(--deep); font-stretch: 88% }
+  .pub-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 8px; margin-bottom: 14px; box-shadow: var(--sh) }
+  .pub-card h2 { font-size: 15px; color: var(--accent); margin-bottom: 12px }
+  .pub input, .pub select, .pub textarea { font-size: 16px; min-height: 46px }
+  .pub .fl > span { font-size: 13px }
+  .pub-nota { font-size: 12.5px; color: var(--muted); margin: -4px 0 12px }
+  .pub-err { color: var(--red); font-size: 13.5px; min-height: 20px; margin: 6px 0 }
+  .pub-btn { width: 100%; padding: 15px; font-size: 16px }
+  .folio-grande { font-size: 34px; font-weight: 800; color: var(--accent); font-stretch: 85%; letter-spacing: .5px; margin: 6px 0 4px; font-variant-numeric: tabular-nums }
+  .ok-card { text-align: center; padding-bottom: 18px }
+  .ok-card .dl2 { text-align: left; margin: 16px 0 }
+  .ok-acc { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap }
+  details.pub-card { padding-bottom: 14px }
+  details summary { cursor: pointer; font-weight: 700; color: var(--accent); font-size: 15px; list-style: none }
+  details summary::-webkit-details-marker { display: none }
+  details[open] summary { margin-bottom: 12px }
+  .consulta { display: flex; gap: 8px }
+  .consulta input { text-transform: uppercase }
+  .estado-card { border: 1px solid var(--line); border-left: 5px solid var(--amb); border-radius: 10px; padding: 12px 14px; margin-top: 12px }
+  .estado-card.est-en_revision { border-left-color: var(--accent) } .estado-card.est-en_atencion { border-left-color: var(--mor) }
+  .estado-card.est-culminada { border-left-color: var(--ok) } .estado-card.est-rechazada { border-left-color: var(--soft) }
+  .estado-t { font-size: 18px; font-weight: 750; color: var(--deep) }
+  .estado-card p { font-size: 13.5px; color: var(--muted); margin: 2px 0 10px }
+  .estado-card dl { display: grid; grid-template-columns: 150px 1fr; gap: 4px 10px; font-size: 13.5px }
+  .estado-card dt { color: var(--muted) }
+  .pub-pie { text-align: center; font-size: 12px; color: var(--soft); margin-top: 18px }
+  .prellenado { background: #e9f2fd; border: 1px solid #b6d2f1; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--deep); margin-bottom: 12px }
+</style>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+</head>
+<body>
+<div class="pub">
+  <header class="pub-h">
+    <img id="solLogo" alt="IES">
+    <div><small>Innovaciones Tecnológicas en Tratamiento del Agua, Departamento de Activos Fijos</small><h1>Solicitud de trabajos de mantenimiento</h1></div>
+  </header>
+
+  <div id="vistaForm">
+    <form id="formSol" novalidate>
+      <section class="pub-card">
+        <h2>Sus datos</h2>
+        <label class="fl"><span>Nombre completo</span><input id="sNom" autocomplete="name" maxlength="120"></label>
+        <label class="fl"><span>Correo electrónico</span><input id="sCor" type="email" autocomplete="email" inputmode="email" maxlength="120"></label>
+        <label class="fl"><span>Teléfono</span><input id="sTel" type="tel" autocomplete="tel" inputmode="tel" maxlength="30" placeholder="10 dígitos"></label>
+      </section>
+      <section class="pub-card">
+        <h2>¿Dónde se requiere el trabajo?</h2>
+        <div class="prellenado" id="prellenado" hidden></div>
+        <label class="fl"><span>Edificio</span><select id="sEd"><option>Cargando…</option></select></label>
+        <label class="fl"><span>Nivel o planta</span><select id="sNiv" disabled></select></label>
+        <label class="fl"><span>Oficina o área</span><select id="sOf" disabled></select></label>
+      </section>
+      <section class="pub-card">
+        <h2>¿Qué se necesita?</h2>
+        <label class="fl"><span>Tipo de trabajo</span><select id="sCat"></select></label>
+        <label class="fl"><span>Descripción</span><textarea id="sDesc" rows="5" maxlength="1500" placeholder="Describa la falla o el trabajo: qué ocurre, en qué punto exacto y desde cuándo"></textarea></label>
+        <p class="pub-nota">Al enviar recibirá un folio para consultar el avance de su solicitud.</p>
+      </section>
+      <div class="pub-err" id="formErr" role="alert"></div>
+      <button type="submit" class="btn btn-primary pub-btn" id="btnEnviar" disabled>Enviar solicitud</button>
+      <p class="pub-nota" id="estadoConexion" style="text-align:center;margin-top:8px"></p>
+    </form>
+  </div>
+
+  <div id="vistaOk" hidden>
+    <section class="pub-card ok-card">
+      <h2>Solicitud enviada</h2>
+      <p class="muted">Su número de folio es</p>
+      <div class="folio-grande" id="okFolio"></div>
+      <p class="muted">Consérvelo para dar seguimiento. Activos Fijos revisará su solicitud y le contactará.</p>
+      <dl class="dl2" id="okResumen"></dl>
+      <div class="ok-acc">
+        <button type="button" class="btn" id="okCopiar">Copiar folio</button>
+        <button type="button" class="btn btn-primary" id="okOtra">Registrar otra solicitud</button>
+      </div>
+    </section>
+  </div>
+
+  <details class="pub-card" id="consultar">
+    <summary>Consultar una solicitud por folio</summary>
+    <form id="formConsulta" class="consulta" novalidate>
+      <input id="cFolio" placeholder="SOL-20261007-001" autocomplete="off" aria-label="Folio de la solicitud">
+      <button type="submit" class="btn btn-primary">Consultar</button>
+    </form>
+    <div id="cResultado"></div>
+  </details>
+
+  <p class="pub-pie">Departamento de Activos Fijos, IES Cancún</p>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/logo.js"></script>
+<script src="js/solicitud.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+{
+  "rules": {
+    "ies-comparativos": { ".read": true, ".write": true },
+    "tableros": {
+      "vehicular": { ".read": true, ".write": true },
+
+      "edificios": { ".read": true, ".write": true },
+      "edificios_media": { ".read": true, ".write": true },
+      "edificios_publico": {
+        "catalogo": { ".read": true, ".write": true },
+        "contadores": {
+          ".read": true,
+          "$prefijo": {
+            "$dia": {
+              ".write": true,
+              ".validate": "newData.isNumber() && newData.val() == (data.exists() ? data.val() + 1 : 1)"
+            }
+          }
+        },
+        "solicitudes": {
+          ".read": true,
+          "$folio": {
+            ".write": "!data.exists()",
+            ".validate": "newData.hasChildren(['folio', 'solicitante', 'correo', 'telefono', 'edificio', 'nivel', 'oficina', 'descripcion'])",
+            "folio": { ".validate": "newData.val() == $folio" },
+            "solicitante": { ".validate": "newData.isString() && newData.val().length >= 3 && newData.val().length <= 120" },
+            "correo": { ".validate": "newData.isString() && newData.val().length <= 120" },
+            "telefono": { ".validate": "newData.isString() && newData.val().length <= 30" },
+            "descripcion": { ".validate": "newData.isString() && newData.val().length >= 10 && newData.val().length <= 1500" },
+            "gestion": { ".write": true }
+          }
+        }
+      }
+    }
+  }
+}
