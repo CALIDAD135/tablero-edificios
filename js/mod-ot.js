@@ -7,10 +7,22 @@
      Iniciar → Culminar → Firmas (genera el PDF de entrega).
    · SLA: en OT internas corre desde el recibido del técnico; en externas y
      anteriores, desde el levantamiento. Siempre se detiene en la culminación.
+   Fase 3:
+   · Levantamiento del técnico con mínimo 4 fotos y lista de materiales con
+     autoguardado en ordenes/{id}/materialesLev/{materialId}.
+   · «Evidencia del reporte» (fotos rep_* de la OT y de la incidencia de origen).
+   · Bandeja del técnico agrupada por edificio y botón para calendarizar.
    ========================================================================== */
 
 const ORIGEN_TXT = { INCIDENCIA: 'Incidencia', SOLICITUD: 'Solicitud de usuario', MANTENIMIENTO: 'Mantenimiento programado', LEVANTAMIENTO: 'Levantamiento en sitio' };
-const FOTOS_N = 3;
+const ETQ_FOTO = { rep: 'Reporte', antes: 'Antes', despues: 'Después' };
+const ICONO_CAL = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M8 14h3v3H8z" fill="currentColor" stroke="none"/></svg>';
+const DIAS_C = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+function fechaCorta(iso) {
+  const d = aFecha(iso); if (!d) return '';
+  const p = x => String(x).padStart(2, '0');
+  return `${DIAS_C[d.getDay()]} ${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 const PASOS_TEC = [
   { k: 'lev', l: 'Levantamiento',      d: 'Fotos del antes y diagnóstico inicial' },
   { k: 'rec', l: 'Confirmar recibido', d: 'Inicia el SLA de atención' },
@@ -55,6 +67,44 @@ const OT = {
     if (!o.fechaCulminacion) return 3;
     return 4;
   },
+  /* Clave de color del calendario según el estatus vigente */
+  estatusCal(o) {
+    if (o.estatus === 'ENTREGADA') return 'ENTREGADA';
+    if (o.estatus === 'CULMINADA') return 'FINALIZADO';
+    if (o.estatus === 'EN_PROCESO') return 'EN_PROCESO';
+    if (o.tipoEjecucion === 'INTERNO' && o.tecnicoId) {
+      if (!o.fechaLevantamiento) return 'POR_LEVANTAR';
+      if (!o.fechaRecibido) return 'POR_RECIBIR';
+    }
+    return 'POR_INICIAR';
+  },
+  /* Lista de materiales del levantamiento (objeto por id → arreglo ordenado) */
+  matLev(o, incluirVacios) {
+    const m = (o && o.materialesLev) || {};
+    return Object.keys(m).map(k => Object.assign({ id: k }, m[k]))
+      .filter(x => incluirVacios || String(x.desc || '').trim())
+      .sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0));
+  },
+  fotosDe(media, fase) { return Object.keys(media || {}).filter(k => k.startsWith(fase + '_') && media[k]).sort((a, b) => Number(a.split('_')[1]) - Number(b.split('_')[1])); },
+  /* Evidencia del reporte: fotos rep_* de la OT y de la incidencia de origen */
+  async evidenciaReporte(o, mediaOT) {
+    const out = [];
+    const m1 = mediaOT || await DB.media(o.id).catch(() => ({}));
+    this.fotosDe(m1, 'rep').forEach(k => out.push({ src: m1[k], et: `Reporte ${Number(k.split('_')[1]) + 1}` }));
+    if (o.origen && o.origen.tipo === 'INCIDENCIA' && o.origen.id) {
+      const m2 = await DB.media(o.origen.id).catch(() => ({}));
+      this.fotosDe(m2, 'rep').forEach(k => out.push({ src: m2[k], et: `${o.origen.folio || 'Incidencia'} (${Number(k.split('_')[1]) + 1})` }));
+    }
+    return out;
+  },
+  galeriaHTML(lista, vacio) {
+    return lista.length
+      ? `<div class="galeria">${lista.map(f => `<figure><img src="${f.src}" alt="${esc(f.et)}" data-zoom><figcaption>${esc(f.et)}</figcaption></figure>`).join('')}</div>`
+      : `<p class="muted galeria-vacia">${esc(vacio)}</p>`;
+  },
+  avisoDepurada(o) {
+    return o.evidenciaDepurada ? `<div class="aviso">La evidencia fotográfica se depuró el ${fFecha(o.evidenciaDepurada)}. Consulte el respaldo ZIP de esa fecha.</div>` : '';
+  },
   proveedoresConocidos() {
     return [...new Set([...ST.ordenes.map(o => o.proveedor), ...ST.mantenimientos.map(p => p.proveedor)].filter(Boolean).map(mayus))].sort();
   },
@@ -79,6 +129,7 @@ const OT = {
       <div class="fg2">
         <label class="fl"><span>Levantamiento agendado en sitio</span><input type="datetime-local" id="${pref}AgL" value="${o.agendaLevantamiento ? localInput(o.agendaLevantamiento) : ''}"${dis}></label>
         <label class="fl"><span>Ejecución agendada</span><input type="datetime-local" id="${pref}AgE" value="${o.agendaEjecucion ? localInput(o.agendaEjecucion) : ''}"${dis}></label>
+        <label class="fl"><span>Duración estimada de la ejecución</span><select id="${pref}Dur"${dis}>${opciones(DURACIONES, o.agendaDuracionMin || CAL_DURACION.ejecucion)}</select></label>
       </div>`;
   },
   ejecucionInit(pref, m, alCambiar) {
@@ -107,6 +158,7 @@ const OT = {
     }
     d.agendaLevantamiento = desdeLocalInput(m.q('#' + pref + 'AgL').value);
     d.agendaEjecucion = desdeLocalInput(m.q('#' + pref + 'AgE').value);
+    d.agendaDuracionMin = Number(m.q('#' + pref + 'Dur').value) || CAL_DURACION.ejecucion;
     return { d, faltan };
   },
 
@@ -142,7 +194,8 @@ const OT = {
             <label class="fl"><span>Teléfono</span><input id="lTel" inputmode="tel" value="${esc(pre.solicitanteTel || '')}"></label>
           </div>
         </section>
-        <section class="campo-sec"><h3>Evidencia fotográfica inicial (opcional)</h3>
+        <section class="campo-sec"><h3>Evidencia del reporte (opcional)</h3>
+          <p class="hint">El técnico verá estas fotografías en su orden para comparar su levantamiento.${pre.origen && pre.origen.tipo === 'INCIDENCIA' ? ' También verá las fotografías de la incidencia de origen.' : ''}</p>
           <div class="fotos" id="lFotos"></div>
         </section>`,
       acciones: [{ texto: 'Cancelar' }, {
@@ -189,33 +242,42 @@ const OT = {
     Personas.activar(m.q('#lSol'), {
       flag: 'esSolicitante', alElegir: p => { if (p.correo && !m.q('#lCor').value) m.q('#lCor').value = p.correo; if (p.telefono && !m.q('#lTel').value) m.q('#lTel').value = p.telefono; }
     });
-    this.montarFotos(m.q('#lFotos'), 'antes', fotos, true, null);
+    this.montarFotos(m.q('#lFotos'), 'rep', fotos, true, null);
   },
 
-  /* Ranuras de fotos: si otId es null se guardan en memoria hasta generar la OT */
-  montarFotos(cont, fase, fotos, editable, otId) {
-    const etiqueta = i => `${fase === 'antes' ? 'Antes' : 'Después'} ${i + 1}`;
+  /* Ranuras de fotos por tipo (rep, antes, despues). Sin ownerId se guardan en memoria
+     hasta crear el registro. opts: { nodo: 'ordenes' | 'incidencias', n, alCambiar(conteo) } */
+  montarFotos(cont, fase, fotos, editable, ownerId, opts = {}) {
+    const n = opts.n || FOTOS[fase] || 3, nodo = opts.nodo || 'ordenes';
+    const etiqueta = i => `${ETQ_FOTO[fase] || fase} ${i + 1}`;
+    const contar = () => Array.from({ length: n }, (_, i) => fotos[`${fase}_${i}`]).filter(Boolean).length;
     const pintar = () => {
-      cont.innerHTML = Array.from({ length: FOTOS_N }, (_, i) => ranuraFoto(`${fase}_${i}`, etiqueta(i), fotos[`${fase}_${i}`], editable)).join('');
+      cont.innerHTML = Array.from({ length: n }, (_, i) => ranuraFoto(`${fase}_${i}`, etiqueta(i), fotos[`${fase}_${i}`], editable)).join('');
+      opts.alCambiar && opts.alCambiar(contar());
+    };
+    const guardar = async (k, url) => {
+      if (url) fotos[k] = url; else delete fotos[k];
+      if (ownerId) { await DB.guardarMedia(ownerId, k, url || null); await DB.actualizar(nodo, ownerId, { [`fotos/${k}`]: url ? true : null }); }
     };
     pintar();
     cont.onchange = async e => {
-      const inp = e.target.closest('[data-foto]'); if (!inp || !inp.files[0]) return;
-      const k = inp.dataset.foto;
-      try {
-        const url = await comprimirImagen(inp.files[0]);
-        fotos[k] = url;
-        if (otId) { await DB.guardarMedia(otId, k, url); await DB.actualizar('ordenes', otId, { [`fotos/${k}`]: true }); }
-        pintar();
-      } catch (er) { UI.toast(er.message, 'err'); }
+      const inp = e.target.closest('[data-foto]'); if (!inp || !inp.files.length) return;
+      // La primera imagen ocupa la ranura elegida; las demás (selección múltiple) llenan las ranuras vacías siguientes
+      const archivos = [...inp.files];
+      const libres = Array.from({ length: n }, (_, i) => `${fase}_${i}`).filter(k => k !== inp.dataset.foto && !fotos[k]);
+      const destino = [inp.dataset.foto, ...libres].slice(0, archivos.length);
+      if (archivos.length > destino.length) UI.toast(`Solo hay ${destino.length} ranura(s) disponibles; se omitieron ${archivos.length - destino.length} imagen(es).`);
+      cont.classList.add('cargando-fotos');
+      try { for (let i = 0; i < destino.length; i++) await guardar(destino[i], await comprimirImagen(archivos[i])); }
+      catch (er) { UI.toast(er.message, 'err'); }
+      finally { cont.classList.remove('cargando-fotos'); pintar(); }
     };
     cont.onclick = async e => {
       const b = e.target.closest('[data-quitar-foto]'); if (!b) return;
-      const k = b.dataset.quitarFoto;
-      delete fotos[k];
-      if (otId) { await DB.guardarMedia(otId, k, null); await DB.actualizar('ordenes', otId, { [`fotos/${k}`]: null }); }
+      await guardar(b.dataset.quitarFoto, null);
       pintar();
     };
+    return { contar };
   },
 
   /* ---------- Ficha de la OT (Administrador, Auxiliar y Gerencia) ---------- */
@@ -275,7 +337,11 @@ const OT = {
           <section class="ot-sec"><h3>Ejecución</h3>
             ${this.ejecucionHTML('oe', o, ed)}
             ${o.diagnostico ? `<div class="nota-tec"><b>Diagnóstico inicial del técnico</b><p>${esc(o.diagnostico)}</p></div>` : ''}
-            ${o.materialesTecnico ? `<div class="nota-tec"><b>Materiales reportados por el técnico</b><p>${esc(o.materialesTecnico)}</p></div>` : ''}
+            ${this.matLev(o).length ? `<div class="nota-tec"><div class="mat-head"><b>Materiales del levantamiento (${this.matLev(o).length})</b>${ed ? '<button type="button" class="btn btn-sm" id="oMatLevPasar">Pasar a la tabla de costos</button>' : ''}</div>
+              <div class="tblwrap"><table class="tbl"><thead><tr><th>Material</th><th class="num">Cant.</th><th>Unidad</th><th>Especificación</th><th>Capturó</th></tr></thead><tbody>
+              ${this.matLev(o).map(x => `<tr><td>${esc(x.desc)}</td><td class="num">${nfmt(x.cant, 2).replace(/\.00$/, '')}</td><td>${esc(x.unidad || '')}</td><td>${esc(x.nota || '')}</td><td>${esc(x.por || '')}<br><span class="muted">${fFechaHora(x.actualizado)}</span></td></tr>`).join('')}
+              </tbody></table></div></div>` : ''}
+            ${o.materialesTecnico ? `<div class="nota-tec"><b>Materiales utilizados según el técnico</b><p>${esc(o.materialesTecnico)}</p></div>` : ''}
             <label class="fl"><span>Trabajos realizados</span><textarea id="oTrab" rows="4" placeholder="Descripción de lo ejecutado; aparecerá en el reporte de entrega"${dis}>${esc(o.trabajos || '')}</textarea></label>
             <div class="mat-head"><span>Materiales y refacciones</span>${ed ? '<button type="button" class="btn btn-sm" id="oMatAdd">Agregar renglón</button>' : ''}</div>
             <div class="tblwrap"><table class="tbl mat"><thead><tr><th>Descripción</th><th>Cant.</th><th>Unidad</th><th>Costo unit.</th><th>Importe</th>${ed ? '<th></th>' : ''}</tr></thead><tbody id="oMat"></tbody></table></div>
@@ -286,7 +352,9 @@ const OT = {
           </section>
         </div>
         <section class="ot-sec"><h3>Evidencia fotográfica</h3>
-          <div class="fotos-2"><div><h4>Antes</h4><div class="fotos" id="oFotA"></div></div><div><h4>Después</h4><div class="fotos" id="oFotD"></div></div></div>
+          ${this.avisoDepurada(o)}
+          <h4>Evidencia del reporte</h4><div class="fotos fotos-4" id="oFotR"></div><div id="oRepInc"></div>
+          <div class="fotos-2"><div><h4>Antes (levantamiento)</h4><div class="fotos" id="oFotA"></div></div><div><h4>Después</h4><div class="fotos" id="oFotD"></div></div></div>
         </section>
         <section class="ot-sec"><h3>Firmas de conformidad</h3>
           <p class="hint">Se habilitan al registrar la culminación. Ambas firmas se incrustan en el reporte de entrega.</p>
@@ -323,12 +391,28 @@ const OT = {
     m.q('#oMO').addEventListener('input', totalMat);
     m.mats = mats;
     pintarMat();
+    if (m.q('#oMatLevPasar')) m.q('#oMatLevPasar').onclick = () => {
+      let n = 0;
+      this.matLev(o).forEach(x => {
+        if (mats.some(y => norm(y.desc) === norm(x.desc))) return;
+        mats.push({ desc: x.desc + (x.nota ? ` (${x.nota})` : ''), cant: Number(x.cant) || 1, unidad: x.unidad || 'PZA', costo: 0 }); n++;
+      });
+      pintarMat();
+      UI.toast(n ? `Se agregaron ${n} renglones. Capture los costos y guarde los cambios.` : 'Los materiales ya están en la tabla de costos.', n ? 'ok' : '');
+    };
 
     // Fotos
     const fotos = Object.assign({}, media);
     const fotEd = can('capture') && abierta;
+    this.montarFotos(m.q('#oFotR'), 'rep', fotos, fotEd, o.id);
     this.montarFotos(m.q('#oFotA'), 'antes', fotos, fotEd, o.id);
     this.montarFotos(m.q('#oFotD'), 'despues', fotos, fotEd && o.estatus !== 'LEVANTADA', o.id);
+    if (o.origen && o.origen.tipo === 'INCIDENCIA' && o.origen.id) {
+      DB.media(o.origen.id).then(mi => {
+        const l = this.fotosDe(mi, 'rep').map(k => ({ src: mi[k], et: `${o.origen.folio} (${Number(k.split('_')[1]) + 1})` }));
+        if (l.length && m.q('#oRepInc')) m.q('#oRepInc').innerHTML = `<p class="hint">Fotografías de la incidencia ${esc(o.origen.folio)}</p>` + this.galeriaHTML(l, '');
+      }).catch(() => {});
+    }
 
     // Firmas
     const pintarFirmas = () => {
@@ -497,6 +581,7 @@ const OT = {
     if (esTecnico() && o0.tecnicoId !== SESION.tecnicoId) { UI.toast('Esta orden no está asignada a usted.', 'err'); return; }
     if (!esTecnico() && !can('capture')) return;
     const media = Object.assign({}, await DB.media(id, true).catch(() => ({})));
+    const rep = await this.evidenciaReporte(o0, media);
     const local = Object.assign({}, o0);      // estado vigente de esta sesión
     let ocupado = false;
     const m = UI.modal({
@@ -506,17 +591,30 @@ const OT = {
       acciones: [{ texto: 'Cerrar', clase: 'btn-ghost' }]
     });
     const cuerpo = m.q('#ppBody');
-    const cuenta = fase => Object.keys(media).filter(k => k.startsWith(fase + '_') && media[k]).length;
+    const cuenta = fase => this.fotosDe(media, fase).length;
+    // Trae del servidor lo que se autoguarda fuera de este modal (materiales y diagnóstico)
+    const sincronizar = () => {
+      const st = this.porId(id); if (!st) return;
+      local.materialesLev = st.materialesLev;
+      if (!local.fechaLevantamiento) local.diagnostico = st.diagnostico;
+      ['agendaEjecucion', 'agendaDuracionMin'].forEach(k => { local[k] = st[k]; });
+    };
 
     const pintar = () => {
-      const o = local, paso = this.paso(o);
+      sincronizar();
+      const o = local, paso = this.paso(o), abierta = OT_ABIERTAS.includes(o.estatus) && !o.fechaCulminacion;
       const tel = String(o.solicitanteTel || '').replace(/\D/g, '');
-      const ag = [o.agendaLevantamiento ? `Levantamiento ${fFechaHora(o.agendaLevantamiento)}` : '', o.agendaEjecucion ? `Ejecución ${fFechaHora(o.agendaEjecucion)}` : ''].filter(Boolean).join('. ');
       const hechoTxt = i => [fFechaHora(o.fechaLevantamiento), fFechaHora(o.fechaRecibido), fFechaHora(o.fechaInicio), fFechaHora(o.fechaCulminacion), fFechaHora(o.fechaEntrega)][i];
       const ctrl = i => {
-        if (i === 0) return `<div class="fotos" id="ppFotA"></div>
-          <label class="fl"><span>Diagnóstico inicial</span><textarea id="ppDiag" rows="4" placeholder="Condición encontrada, causa probable y trabajo a realizar">${esc(o.diagnostico || '')}</textarea></label>
-          <button type="button" class="btn btn-primary btn-grande" data-pp="lev">Registrar levantamiento</button>`;
+        if (i === 0) {
+          const nf = cuenta('antes'), nm = this.matLev(o).length, dg = String(o.diagnostico || '').trim();
+          return `<ul class="pp-check">
+              <li class="${nf >= LEV_FOTOS_MIN ? 'ok' : ''}">Fotografías del área: ${nf} de ${LEV_FOTOS_MIN} mínimas</li>
+              <li class="${dg ? 'ok' : ''}">Diagnóstico inicial${dg ? '' : ' pendiente'}</li>
+              <li class="${nm ? 'ok' : 'opc'}">Lista de materiales: ${nm} ${nm === 1 ? 'material' : 'materiales'}</li>
+            </ul>
+            <button type="button" class="btn btn-primary btn-grande" data-pp="lev">Generar levantamiento</button>`;
+        }
         if (i === 1) return '<button type="button" class="btn btn-primary btn-grande" data-pp="rec">Confirmar recibido</button>';
         if (i === 2) return '<button type="button" class="btn btn-primary btn-grande" data-pp="ini">Iniciar trabajos</button>';
         if (i === 3) return `<div class="fotos" id="ppFotD"></div>
@@ -541,29 +639,34 @@ const OT = {
           <dl class="pp-datos">
             <dt>Trabajo solicitado</dt><dd>${esc(o.hallazgo || '')}</dd>
             <dt>Solicitante</dt><dd>${esc(o.solicitanteNombre || '—')}${tel ? ` <a class="btn btn-sm" href="tel:${tel}">Llamar</a>` : ''}</dd>
-            ${ag ? `<dt>Agenda</dt><dd>${esc(ag)}</dd>` : ''}
+            ${o.agendaLevantamiento ? `<dt>Levantamiento</dt><dd>${fFechaHora(o.agendaLevantamiento)}</dd>` : ''}
           </dl>
+          ${abierta ? `<button type="button" class="pp-agenda${o.agendaEjecucion ? ' on' : ''}" data-pp="agenda">${ICONO_CAL}
+            <span><b>${o.agendaEjecucion ? 'Ejecución agendada' : 'Calendarizar ejecución'}</b><small>${o.agendaEjecucion ? esc(fechaCorta(o.agendaEjecucion) + ', ' + ((DURACIONES.find(x => x.v === Number(o.agendaDuracionMin)) || {}).l || '2 h')) : 'Asigne fecha y hora; se refleja en el calendario general'}</small></span></button>` : ''}
         </div>
+        <section class="pp-rep"><h3>Evidencia del reporte</h3>${this.galeriaHTML(rep, 'El reporte no incluye fotografías.')}</section>
+        ${this.avisoDepurada(o)}
         ${o.estatus === 'CANCELADA' ? `<div class="aviso">Orden cancelada: ${esc(o.motivoCancelacion || '')}</div>` : `
         <ol class="pp-pasos">${PASOS_TEC.map((p, i) => `
           <li class="pp-paso ${i < paso ? 'hecho' : i === paso ? 'actual' : 'bloq'}">
             <div class="pp-num" aria-hidden="true">${i < paso ? '✓' : i + 1}</div>
-            <div class="pp-cont"><h4>${p.l}</h4><p>${i < paso ? 'Registrado ' + hechoTxt(i) : p.d}</p>${i === paso ? ctrl(i) : ''}</div>
+            <div class="pp-cont"><h4>${p.l}</h4><p>${i < paso ? 'Registrado ' + hechoTxt(i) : p.d}${i === 0 && i < paso ? ' <button type="button" class="lnk" data-pp="verlev">Ver levantamiento</button>' : ''}</p>${i === paso ? ctrl(i) : ''}</div>
           </li>`).join('')}</ol>
         ${paso === 5 ? `<div class="pp-fin"><b>Trabajo entregado</b><span>${fFechaHora(o.fechaEntrega)}</span><button type="button" class="btn btn-primary btn-grande" data-pp="pdf">Ver reporte de entrega</button></div>` : ''}`}`;
-      if (paso === 0) this.montarFotos(cuerpo.querySelector('#ppFotA'), 'antes', media, true, id);
       if (paso === 3) this.montarFotos(cuerpo.querySelector('#ppFotD'), 'despues', media, true, id);
     };
 
     const paso = async (k, btn) => {
       if (ocupado) return;
       const o = local; let c = null, logTxt = '';
-      if (k === 'lev') {
-        const diag = cuerpo.querySelector('#ppDiag').value.trim();
-        if (!cuenta('antes')) { UI.toast('Tome al menos una foto del antes.', 'err'); return; }
-        if (!diag) { UI.toast('Escriba el diagnóstico inicial.', 'err'); cuerpo.querySelector('#ppDiag').classList.add('err'); return; }
-        c = { fechaLevantamiento: nowISO(), diagnostico: diag }; logTxt = 'Levantamiento del técnico';
+      if (k === 'lev' || k === 'verlev') {
+        this.levantamientoTecnico(id, {
+          alRegistrar: (cambios, md) => { Object.assign(local, cambios); Object.assign(media, md); pintar(); },
+          alCerrar: md => { Object.assign(media, md); setTimeout(pintar, 120); }
+        });
+        return;
       }
+      if (k === 'agenda') { this.calendarizar(id, cambios => { Object.assign(local, cambios); pintar(); }); return; }
       if (k === 'rec') { c = { fechaRecibido: nowISO() }; logTxt = 'Recibido: inicia el SLA de atención'; }
       if (k === 'ini') { c = { estatus: 'EN_PROCESO', fechaInicio: nowISO() }; logTxt = 'Inicio de trabajos'; }
       if (k === 'cul') {
@@ -600,6 +703,173 @@ const OT = {
       });
     });
     pintar();
+  },
+
+  /* ==========================================================================
+     Levantamiento del técnico: mínimo 4 fotografías, diagnóstico y lista de
+     materiales con autoguardado en ordenes/{id}/materialesLev/{materialId}
+     ========================================================================== */
+  async levantamientoTecnico(id, { alRegistrar, alCerrar } = {}) {
+    const o = this.porId(id); if (!o) return;
+    if (esTecnico() && o.tecnicoId !== SESION.tecnicoId) { UI.toast('Esta orden no está asignada a usted.', 'err'); return; }
+    if (!esTecnico() && !can('capture')) return;
+    const media = Object.assign({}, await DB.media(id, true).catch(() => ({})));
+    const rep = await this.evidenciaReporte(o, media);
+    const registrado = !!o.fechaLevantamiento;
+    const editable = !o.fechaCulminacion && OT_ABIERTAS.includes(o.estatus);
+    const fotosEd = editable && !registrado;                 // la evidencia se congela al registrar
+    const quien = SESION.nombre || (ROLES[SESION.rol] || {}).label || '';
+    const filas = this.matLev(o, true).map(x => ({ mid: x.id, desc: x.desc || '', cant: x.cant ?? 1, unidad: x.unidad || 'PZA', nota: x.nota || '', orden: x.orden || Date.now(), guardado: true }));
+    const timers = {};
+    let tDiag = null;
+
+    const m = UI.modal({
+      titulo: `Levantamiento ${o.folio}`, clase: 'm-campo m-pipe m-fija', ancho: '760px',
+      sub: `${esc(o.oficina)}, ${esc(tituloEdificio(o.edificio))}. ${registrado ? 'Registrado ' + fFechaHora(o.fechaLevantamiento) + '.' : 'Los cambios se guardan automáticamente.'}`,
+      cuerpo: `
+        <section class="campo-sec"><h3>Evidencia del reporte</h3>
+          ${this.galeriaHTML(rep, 'El reporte no incluye fotografías.')}
+          <p class="hint">Tome sus fotografías desde ángulos comparables para documentar el antes y el después.</p>
+        </section>
+        <section class="campo-sec"><div class="sec-head"><h3>Fotografías del área a intervenir</h3><span class="conteo-fotos" id="lvCont"></span></div>
+          <p class="hint">Mínimo ${LEV_FOTOS_MIN}. Con Galería puede elegir varias a la vez.</p>
+          <div class="fotos" id="lvFotos"></div>
+        </section>
+        <section class="campo-sec"><h3>Diagnóstico inicial</h3>
+          <label class="fl"><textarea id="lvDiag" rows="4" placeholder="Condición encontrada, causa probable y trabajo a realizar"${editable ? '' : ' disabled'}>${esc(o.diagnostico || '')}</textarea></label>
+        </section>
+        <section class="campo-sec"><div class="sec-head"><h3>Lista de materiales necesarios</h3><span class="autosave" id="lvEstado">Autoguardado activo</span></div>
+          <div class="mlev" id="lvMats"></div>
+          ${editable ? '<button type="button" class="btn" id="lvAdd">Agregar material</button>' : ''}
+          <datalist id="lvUnidades">${UNIDADES_MAT.map(u => `<option value="${u}">`).join('')}</datalist>
+        </section>`,
+      acciones: [
+        { texto: 'Cerrar', clase: 'btn-ghost' },
+        ...(editable && !registrado ? [{ texto: 'Registrar levantamiento', clase: 'btn-primary btn-grande', fn: async mm => {
+          await guardarTodo();
+          const n = this.fotosDe(media, 'antes').length, diag = mm.q('#lvDiag').value.trim();
+          if (n < LEV_FOTOS_MIN) { UI.toast(`Se requieren al menos ${LEV_FOTOS_MIN} fotografías del área; lleva ${n}.`, 'err'); return false; }
+          if (!diag) { UI.toast('Escriba el diagnóstico inicial.', 'err'); mm.q('#lvDiag').classList.add('err'); return false; }
+          const nm = filas.filter(f => String(f.desc).trim()).length;
+          if (!nm && !(await UI.confirmar('No capturó materiales. ¿El trabajo no requiere materiales?', { texto: 'Registrar sin materiales' }))) return false;
+          const c = { fechaLevantamiento: nowISO(), diagnostico: diag };
+          await DB.actualizar('ordenes', id, c);
+          DB.log('PASO', 'ordenes', o.folio, `Levantamiento del técnico: ${n} fotografías, ${nm} materiales`);
+          UI.toast('Levantamiento registrado.', 'ok');
+          alRegistrar && alRegistrar(c, media);
+        } }] : [])
+      ],
+      alCerrar: () => { guardarTodo(); alCerrar && alCerrar(media); }
+    });
+
+    const estado = (t, cls) => { const e = m.q('#lvEstado'); if (e) { e.textContent = t; e.className = 'autosave ' + (cls || ''); } };
+    const hora = () => new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    // Fotografías
+    const cont = m.q('#lvCont');
+    this.montarFotos(m.q('#lvFotos'), 'antes', media, fotosEd, id, {
+      alCambiar: n => { if (cont) { cont.textContent = `${n} de ${LEV_FOTOS_MIN} mínimas`; cont.className = 'conteo-fotos' + (n >= LEV_FOTOS_MIN ? ' ok' : ''); } }
+    });
+
+    // Diagnóstico con autoguardado
+    const diagEl = m.q('#lvDiag');
+    const guardarDiag = async () => {
+      clearTimeout(tDiag); tDiag = null;
+      if (!editable) return;
+      const v = diagEl.value.trim();
+      if (v === String(o.diagnostico || '').trim()) return;
+      o.diagnostico = v;
+      await escribir(DB.db.ref(`${FB.root}/ordenes/${id}`).update({ diagnostico: v, updatedAt: nowISO() }));
+    };
+    diagEl.addEventListener('input', () => { estado('Guardando…', 'ing'); clearTimeout(tDiag); tDiag = setTimeout(guardarDiag, 800); });
+
+    // Escritura con estado visible (sin conexión: Firebase la conserva y la envía al reconectar)
+    const escribir = async promesa => {
+      if (!DB.conectado) { estado('Sin conexión: se guardó en el dispositivo y se enviará al reconectar', 'err'); return; }
+      try { await promesa; estado(`Guardado ${hora()}`, 'ok'); }
+      catch (e) { estado('No se pudo guardar: ' + e.message, 'err'); }
+    };
+
+    // Lista de materiales
+    const lista = m.q('#lvMats');
+    const dis = editable ? '' : ' disabled';
+    const pintarMats = () => {
+      lista.innerHTML = filas.length ? filas.map(f => `<div class="mlev-fila" data-mid="${f.mid}">
+          <input class="mlev-desc" data-k="desc" value="${esc(f.desc)}" placeholder="Material o refacción" aria-label="Material"${dis}>
+          <input class="mlev-cant num" data-k="cant" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(f.cant)}" aria-label="Cantidad"${dis}>
+          <input class="mlev-uni" data-k="unidad" list="lvUnidades" value="${esc(f.unidad)}" aria-label="Unidad"${dis}>
+          <input class="mlev-nota" data-k="nota" value="${esc(f.nota)}" placeholder="Especificación, medida o marca (opcional)" aria-label="Especificación"${dis}>
+          ${editable ? '<button type="button" class="btn-ico mlev-del" data-borrar aria-label="Quitar material">✕</button>' : ''}
+        </div>`).join('') : '<p class="muted">Sin materiales capturados.</p>';
+    };
+    const ruta = mid => DB.db.ref(`${FB.root}/ordenes/${id}/materialesLev/${mid}`);
+    const guardarFila = async mid => {
+      clearTimeout(timers[mid]); delete timers[mid];
+      const f = filas.find(x => x.mid === mid); if (!f) return;
+      if (!String(f.desc).trim() && !f.guardado) return;           // no se crean renglones vacíos
+      const ahora = nowISO();
+      const d = { desc: String(f.desc).trim(), cant: Number(f.cant) || 0, unidad: mayus(f.unidad) || 'PZA', nota: String(f.nota).trim(), orden: f.orden, actualizado: ahora, por: quien };
+      if (!f.guardado) d.creado = ahora;
+      f.guardado = true;
+      await escribir(ruta(mid).update(d));
+    };
+    const guardarTodo = () => Promise.all([...Object.keys(timers).map(guardarFila), tDiag ? guardarDiag() : null]);
+    lista.addEventListener('input', e => {
+      const t = e.target, fila = t.closest('[data-mid]'); if (!fila || !t.dataset.k) return;
+      const f = filas.find(x => x.mid === fila.dataset.mid); if (!f) return;
+      f[t.dataset.k] = t.value;
+      estado('Guardando…', 'ing');
+      clearTimeout(timers[f.mid]); timers[f.mid] = setTimeout(() => guardarFila(f.mid), 600);
+    });
+    lista.addEventListener('click', async e => {
+      const b = e.target.closest('[data-borrar]'); if (!b) return;
+      const mid = b.closest('[data-mid]').dataset.mid, f = filas.find(x => x.mid === mid);
+      clearTimeout(timers[mid]); delete timers[mid];
+      filas.splice(filas.indexOf(f), 1);
+      pintarMats();
+      if (f.guardado) { estado('Guardando…', 'ing'); await escribir(ruta(mid).remove()); }
+    });
+    if (m.q('#lvAdd')) m.q('#lvAdd').onclick = () => {
+      const f = { mid: uid(), desc: '', cant: 1, unidad: 'PZA', nota: '', orden: Date.now(), guardado: false };
+      filas.push(f); pintarMats();
+      const inp = lista.querySelector(`[data-mid="${f.mid}"] .mlev-desc`); inp && inp.focus();
+    };
+    pintarMats();
+  },
+
+  /* ---------- Calendarizar la ejecución (técnico, Administrador o Auxiliar) ---------- */
+  calendarizar(id, despues) {
+    const o = this.porId(id); if (!o) return;
+    if (esTecnico() && o.tecnicoId !== SESION.tecnicoId) { UI.toast('Esta orden no está asignada a usted.', 'err'); return; }
+    if (!esTecnico() && !can('capture')) return;
+    if (!OT_ABIERTAS.includes(o.estatus) || o.fechaCulminacion) { UI.toast('La orden ya está finalizada.'); return; }
+    const quien = SESION.nombre || (ROLES[SESION.rol] || {}).label || '';
+    UI.modal({
+      titulo: 'Calendarizar ejecución', sub: `${esc(o.folio)}: ${esc(o.oficina)}, ${esc(tituloEdificio(o.edificio))}`, ancho: '460px', clase: 'm-agenda',
+      cuerpo: `<label class="fl"><span>Fecha y hora de ejecución</span><input type="datetime-local" id="caFec" value="${o.agendaEjecucion ? localInput(o.agendaEjecucion) : ''}"></label>
+        <label class="fl"><span>Duración estimada</span><select id="caDur">${opciones(DURACIONES, o.agendaDuracionMin || CAL_DURACION.ejecucion)}</select></label>
+        <p class="hint">La fecha se refleja de inmediato en el Calendario general.${o.agendadoPor ? ` Última programación: ${esc(o.agendadoPor)}, ${fFechaHora(o.agendadoEn)}.` : ''}</p>`,
+      acciones: [
+        ...(o.agendaEjecucion ? [{ texto: 'Quitar fecha', clase: 'btn-ghost txt-rojo', fn: async () => {
+          const c = { agendaEjecucion: null, agendaDuracionMin: null, agendadoPor: quien, agendadoEn: nowISO() };
+          await DB.actualizar('ordenes', id, c);
+          DB.log('AGENDA', 'ordenes', o.folio, 'Fecha de ejecución retirada');
+          UI.toast('Fecha retirada.');
+          despues && despues(c);
+        } }] : []),
+        { texto: 'Cancelar' },
+        { texto: 'Guardar', clase: 'btn-primary', fn: async mm => {
+          const v = desdeLocalInput(mm.q('#caFec').value);
+          if (!v) { UI.toast('Indique fecha y hora.', 'err'); return false; }
+          if (new Date(v) < new Date(Date.now() - 3600000) && !(await UI.confirmar('La fecha es anterior a la hora actual. ¿Guardarla de todos modos?', { texto: 'Guardar' }))) return false;
+          const c = { agendaEjecucion: v, agendaDuracionMin: Number(mm.q('#caDur').value), agendadoPor: quien, agendadoEn: nowISO() };
+          await DB.actualizar('ordenes', id, c);
+          DB.log('AGENDA', 'ordenes', o.folio, `Ejecución ${fFechaHora(v)}`);
+          UI.toast(`Ejecución agendada: ${fechaCorta(v)}.`, 'ok');
+          despues && despues(c);
+        } }
+      ]
+    });
   }
 };
 
@@ -680,33 +950,57 @@ const ModOT = {
    ========================================================================== */
 const ModMisOT = {
   init() {
-    $('#moLista').addEventListener('click', e => { const c = e.target.closest('[data-ot]'); if (c) OT.pipeline(c.dataset.ot); });
+    $('#moLista').addEventListener('click', e => {
+      const a = e.target.closest('[data-agendar]');
+      if (a) { OT.calendarizar(a.dataset.agendar); return; }
+      const c = e.target.closest('[data-ot]'); if (c) OT.pipeline(c.dataset.ot);
+    });
   },
   render() {
     $('#moNombre').textContent = SESION.nombre || '';
     const mias = ST.ordenes.filter(o => o.tecnicoId && o.tecnicoId === SESION.tecnicoId && o.estatus !== 'CANCELADA');
+    const prio = o => ordenIdx(['ALTA', 'MEDIA', 'BAJA'], o.prioridad);
     const abiertas = mias.filter(o => OT_ABIERTAS.includes(o.estatus))
-      .sort((a, b) => String(a.agendaLevantamiento || a.agendaEjecucion || '9').localeCompare(String(b.agendaLevantamiento || b.agendaEjecucion || '9')) || ordenIdx(['ALTA', 'MEDIA', 'BAJA'], a.prioridad) - ordenIdx(['ALTA', 'MEDIA', 'BAJA'], b.prioridad));
+      .sort((a, b) => String(a.agendaEjecucion || a.agendaLevantamiento || '9').localeCompare(String(b.agendaEjecucion || b.agendaLevantamiento || '9')) || prio(a) - prio(b));
     const entregadas = mias.filter(o => o.estatus === 'ENTREGADA').sort((a, b) => String(b.fechaEntrega).localeCompare(String(a.fechaEntrega))).slice(0, 10);
     const cnt = p => abiertas.filter(o => OT.paso(o) === p).length;
+    const sinAgenda = abiertas.filter(o => !o.agendaEjecucion && OT.paso(o) < 4).length;
     $('#moResumen').innerHTML = [
       ['Por levantar', cnt(0)], ['Por recibir', cnt(1)], ['Por iniciar', cnt(2)], ['En proceso', cnt(3)], ['Por firmar', cnt(4)]
-    ].map(([l, n]) => `<div class="mo-k${n ? ' on' : ''}"><b>${n}</b><span>${l}</span></div>`).join('');
-    const tarjeta = o => {
+    ].map(([l, n]) => `<div class="mo-k${n ? ' on' : ''}"><b>${n}</b><span>${l}</span></div>`).join('') +
+      (sinAgenda ? `<p class="mo-aviso">${sinAgenda} ${sinAgenda === 1 ? 'orden sin fecha' : 'órdenes sin fecha'} de ejecución. Use el botón de calendario para programarlas.</p>` : '');
+
+    const tarjeta = (o, conAgenda) => {
       const p = OT.paso(o);
-      const ag = o.agendaLevantamiento && p === 0 ? `Levantamiento ${fFechaHora(o.agendaLevantamiento)}` : o.agendaEjecucion ? `Ejecución ${fFechaHora(o.agendaEjecucion)}` : '';
-      return `<button type="button" class="mo-card prio-${(o.prioridad || 'MEDIA').toLowerCase()}" data-ot="${esc(o.id)}">
-        <div class="mo-top"><span class="mono">${esc(o.folio)}</span>${tagPrioridad(o.prioridad)}</div>
-        <div class="mo-of">${esc(o.oficina)}</div>
-        <div class="mo-ub">${esc(tituloEdificio(o.edificio))}, ${esc(tituloNivel(o.nivel).toLowerCase())}. ${esc(o.categoria)}</div>
-        ${ag ? `<div class="mo-ag">${esc(ag)}</div>` : ''}
-        <div class="mo-prog" aria-label="Paso ${Math.min(p + 1, 5)} de 5">${PASOS_TEC.map((_, i) => `<i class="${i < p ? 'ok' : i === p ? 'act' : ''}"></i>`).join('')}</div>
-        <div class="mo-paso">${p < 5 ? `Paso ${p + 1} de 5: ${PASOS_TEC[p].l}` : 'Entregada'}</div>
-        ${o.estatus !== 'ENTREGADA' ? slaHTML(o, true) : ''}
-      </button>`;
+      const ag = o.agendaLevantamiento && p === 0 ? `Levantamiento ${fechaCorta(o.agendaLevantamiento)}` : '';
+      const puedeAgendar = conAgenda && p < 4;
+      return `<article class="mo-card prio-${(o.prioridad || 'MEDIA').toLowerCase()}">
+        <button type="button" class="mo-main" data-ot="${esc(o.id)}">
+          <div class="mo-top"><span class="mono">${esc(o.folio)}</span>${tagPrioridad(o.prioridad)}</div>
+          <div class="mo-of">${esc(o.oficina)}</div>
+          <div class="mo-ub">${esc(tituloNivel(o.nivel))}. ${esc(o.categoria)}</div>
+          ${ag ? `<div class="mo-ag">${esc(ag)}</div>` : ''}
+          <div class="mo-prog" aria-label="Paso ${Math.min(p + 1, 5)} de 5">${PASOS_TEC.map((_, i) => `<i class="${i < p ? 'ok' : i === p ? 'act' : ''}"></i>`).join('')}</div>
+          <div class="mo-paso">${p < 5 ? `Paso ${p + 1} de 5: ${PASOS_TEC[p].l}` : 'Entregada'}</div>
+          ${o.estatus !== 'ENTREGADA' ? slaHTML(o, true) : ''}
+        </button>
+        ${puedeAgendar ? `<button type="button" class="mo-cal${o.agendaEjecucion ? ' on' : ''}" data-agendar="${esc(o.id)}" aria-label="Calendarizar ejecución de ${esc(o.folio)}" title="Calendarizar">
+          ${ICONO_CAL}<span>${o.agendaEjecucion ? esc(fechaCorta(o.agendaEjecucion)) : 'Agendar'}</span></button>` : ''}
+      </article>`;
     };
-    $('#moLista').innerHTML = (abiertas.length ? abiertas.map(tarjeta).join('') : UI.vacio('No tiene órdenes de trabajo pendientes.')) +
-      (entregadas.length ? `<h3 class="mo-sec">Entregadas recientemente</h3>${entregadas.map(tarjeta).join('')}` : '');
+
+    // Agrupación por edificio (orden del catálogo; ubicaciones generales al final)
+    const eds = [...new Set(abiertas.map(o => o.edificio || 'SIN UBICACIÓN'))]
+      .sort((a, b) => ordenIdx(EDIFICIOS_ORDEN, a) - ordenIdx(EDIFICIOS_ORDEN, b) || a.localeCompare(b));
+    const grupos = eds.map(ed => {
+      const l = abiertas.filter(o => (o.edificio || 'SIN UBICACIÓN') === ed);
+      return `<section class="mo-edif" aria-label="${esc(tituloEdificio(ed))}">
+        <header class="mo-edif-h"><h3>${esc(ed === 'TODAS LAS INSTALACIONES' ? 'Todas las instalaciones' : tituloEdificio(ed))}</h3><span>${l.length} ${l.length === 1 ? 'orden' : 'órdenes'}</span></header>
+        ${l.map(o => tarjeta(o, true)).join('')}
+      </section>`;
+    }).join('');
+    $('#moLista').innerHTML = (abiertas.length ? grupos : UI.vacio('No tiene órdenes de trabajo pendientes.')) +
+      (entregadas.length ? `<h3 class="mo-sec">Entregadas recientemente</h3>${entregadas.map(o => tarjeta(o, false)).join('')}` : '');
   }
 };
 

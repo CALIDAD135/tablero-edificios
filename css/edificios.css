@@ -530,3 +530,90 @@ body.modo-tecnico main { max-width: 720px }
 .cal-wrap .fc-event.ev-hecho { opacity: .5 }
 .cal-wrap .fc-event.ev-hecho .fc-event-title { text-decoration: line-through }
 @media (max-width: 760px) { .cal-wrap.fc .fc-toolbar { flex-wrap: wrap; gap: 6px } .cal-wrap.fc .fc-toolbar-title { font-size: 15px } }
+
+/* ==========================================================================
+   FASE 3 — Bandeja por edificio, calendarización, levantamiento y respaldo
+   ========================================================================== */
+body.modo-tecnico #btnRespaldo { display: none !important }
+.fotos-4 { grid-template-columns: repeat(4, 1fr) }
+@media (max-width: 520px) { .fotos-4 { grid-template-columns: repeat(2, 1fr) } .fotos { grid-template-columns: repeat(2, 1fr) } }
+.fotos.cargando-fotos { opacity: .55; pointer-events: none }
+.campo-sub { border-top: 1px solid var(--line2); padding-top: 10px; margin-bottom: 8px }
+.campo-sub > b { font-size: 13px; color: var(--deep) }
+.sec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap }
+.conteo-fotos { font-size: 12.5px; font-weight: 700; color: var(--amb) } .conteo-fotos.ok { color: var(--ok) }
+
+/* Galería «Evidencia del reporte» */
+.galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; margin-bottom: 6px }
+.galeria figure { margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel2) }
+.galeria img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; cursor: zoom-in }
+.galeria figcaption { font-size: 11px; color: var(--muted); padding: 3px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.galeria-vacia { font-size: 12.5px; margin-bottom: 6px }
+.pp-rep { border: 1px solid var(--line2); border-radius: 12px; padding: 10px 12px 6px; margin-bottom: 14px; background: #fff }
+.pp-rep h3 { font-size: 14px; color: var(--accent); margin-bottom: 8px }
+
+/* Bandeja del técnico agrupada por edificio */
+.mo-edif { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px }
+.mo-edif-h { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid var(--estr); padding: 6px 2px 4px; position: sticky; top: 0; background: var(--bg); z-index: 2 }
+.mo-edif-h h3 { font-size: 16px; font-weight: 750; font-stretch: 86%; color: var(--deep) }
+.mo-edif-h span { font-size: 12px; color: var(--muted) }
+.mo-aviso { grid-column: 1 / -1; font-size: 12.5px; color: #8a5300; background: #fff1db; border: 1px solid #f0cf95; border-radius: 8px; padding: 6px 10px }
+.mo-resumen { grid-template-columns: repeat(5, 1fr) }
+.mo-card { display: grid; grid-template-columns: 1fr auto; padding: 0; gap: 0; cursor: default }
+.mo-main { font: inherit; text-align: left; background: none; border: none; padding: 12px 10px 12px 14px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; color: var(--txt); min-width: 0 }
+.mo-main:active { background: #f5f9ff }
+.mo-cal { font: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 78px; border: none; border-left: 1px solid var(--line2); background: var(--panel2); color: var(--accent); cursor: pointer; border-radius: 0 11px 11px 0; padding: 8px 4px; font-size: 11px; font-weight: 700; text-align: center; line-height: 1.2 }
+.mo-cal.on { background: #e9f2fd; color: var(--deep) }
+.mo-cal:active { background: #d5e6f8 }
+
+/* Botón de calendarización dentro de la OT del técnico */
+.pp-agenda { font: inherit; display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: #fff; border: 1.5px dashed var(--accent); border-radius: 10px; padding: 10px 12px; cursor: pointer; color: var(--accent) }
+.pp-agenda.on { border-style: solid; background: #e9f2fd }
+.pp-agenda span { display: flex; flex-direction: column }
+.pp-agenda b { font-size: 14px; color: var(--deep) }
+.pp-agenda small { font-size: 12px; color: var(--muted) }
+.pp-check { list-style: none; display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; font-size: 13px }
+.pp-check li::before { content: '○'; display: inline-block; width: 18px; color: var(--amb); font-weight: 700 }
+.pp-check li.ok::before { content: '✓'; color: var(--ok) }
+.pp-check li.opc::before { content: '–'; color: var(--soft) }
+
+/* Lista de materiales con autoguardado */
+.autosave { font-size: 12px; color: var(--soft) }
+.autosave.ing { color: var(--amb) } .autosave.ok { color: var(--ok) } .autosave.err { color: var(--red) }
+.mlev { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px }
+.mlev-fila { display: grid; grid-template-columns: 1fr 86px 96px 32px; grid-template-areas: 'desc cant uni del' 'nota nota nota nota'; gap: 6px; border: 1px solid var(--line2); border-radius: 10px; padding: 8px; background: #fff }
+.mlev-desc { grid-area: desc } .mlev-cant { grid-area: cant } .mlev-uni { grid-area: uni } .mlev-nota { grid-area: nota; font-size: 13px } .mlev-del { grid-area: del; align-self: center }
+@media (max-width: 520px) { .mlev-fila { grid-template-columns: 1fr 1fr 32px; grid-template-areas: 'desc desc del' 'cant uni uni' 'nota nota nota' } }
+
+/* Calendario: estatus por color, externos rayados, levantamientos con contorno */
+.cal-filtros { flex-direction: column; align-items: stretch; gap: 6px }
+.cal-fila { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center }
+.cal-t { font-size: 11.5px; font-weight: 700; color: var(--soft); min-width: 104px }
+.cal-f i.sw-mant { background: #0f7a8a }
+.cal-f i.sw-int { background: #475569 }
+.cal-f i.sw-ext { background: repeating-linear-gradient(135deg, #475569 0 3px, #cbd5e1 3px 6px) }
+.cal-f i.sw-lev { background: #fff; border: 2px solid #5a3fb8 }
+.cal-wrap .fc-event.ev-ext { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.28) 0 5px, transparent 5px 10px) }
+.cal-wrap .fc-event.ev-lev { border-width: 2px; border-style: dashed }
+.cal-wrap .fc-event.ev-lev .fc-event-main, .cal-wrap .fc-event.ev-lev .fc-event-time, .cal-wrap .fc-event.ev-lev .fc-event-title { color: #5a3fb8 }
+.cal-wrap .fc-daygrid-block-event .fc-event-time { font-weight: 700 }
+
+/* Respaldo y depuración */
+.rs-estado { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px }
+.rs-estado > div { background: var(--panel2); border: 1px solid var(--line2); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; font-size: 13px }
+.rs-estado span { font-size: 11.5px; color: var(--soft); font-weight: 600 } .rs-estado small { color: var(--muted) }
+.rs-paso { border: 1px solid var(--line2); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px }
+.rs-paso h3 { font-size: 15px; color: var(--deep); display: flex; align-items: center; gap: 8px; margin-bottom: 6px }
+.rs-paso h3 span { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 13px }
+.rs-paso > p { font-size: 13px; color: var(--muted); margin-bottom: 8px }
+.rs-paso code { font-size: 12px; background: var(--panel2); padding: 1px 5px; border-radius: 4px }
+.rs-lista { font-size: 13px; margin: 0 0 12px 18px; display: flex; flex-direction: column; gap: 3px }
+.rs-prog { margin: 6px 0 12px }
+.rs-bar { height: 10px; background: #e4ecf6; border-radius: 6px; overflow: hidden }
+.rs-bar i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .2s }
+.rs-prog p { font-size: 12.5px; color: var(--muted); margin-top: 6px }
+.rs-dias { width: 72px; min-height: 30px; padding: 2px 6px; display: inline-block; margin: 0 4px }
+.rs-estimado { font-size: 13.5px; margin: 6px 0 12px; padding: 8px 10px; background: #fde3e6; border: 1px solid #f2b1b9; border-radius: 8px; color: #6b1420 }
+.ok-respaldo { font-size: 13px; background: #dcf3e8; border: 1px solid #a7dcc3; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; color: #0a5e3b }
+.m-respaldo .seg { flex-direction: column; gap: 8px }
+@media (max-width: 620px) { .rs-estado { grid-template-columns: 1fr } }

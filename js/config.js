@@ -62,7 +62,7 @@ const TIPOS_EJECUCION = {
 // Colores del calendario (también se usan en la leyenda)
 const CAL_COLORES = {
   mant:          '#0f7a8a',   // mantenimiento programado
-  mantEjecutado: '#0f7a4e',   // mantenimiento ejecutado
+  mantEjecutado: '#4d7c0f',   // mantenimiento ejecutado
   mantVencido:   '#b81f30',   // mantenimiento vencido
   interno:       '#0b4f9e',   // OT de personal interno
   externo:       '#c77700',   // OT de proveedor externo
@@ -70,6 +70,27 @@ const CAL_COLORES = {
 };
 // Duración con que se pintan en el calendario los eventos sin hora de término (minutos)
 const CAL_DURACION = { ejecucion: 120, levantamiento: 60 };
+
+/* ---------- Fase 3: levantamiento del técnico, calendarización y respaldo ---------- */
+// Ranuras de fotografía por tipo de evidencia (nodo tableros/edificios_media/{otId|incidenciaId}/{tipo}_{n})
+const FOTOS = { rep: 4, antes: 6, despues: 6 };
+const LEV_FOTOS_MIN = 4;              // mínimo de fotografías en el levantamiento del técnico
+const UNIDADES_MAT = ['PZA', 'M', 'M2', 'M3', 'ML', 'L', 'KG', 'JGO', 'ROLLO', 'CUBETA', 'GALÓN', 'SACO', 'TRAMO', 'CAJA', 'LOTE'];
+const DURACIONES = [
+  { v: 30, l: '30 min' }, { v: 60, l: '1 h' }, { v: 120, l: '2 h' }, { v: 180, l: '3 h' },
+  { v: 240, l: '4 h' }, { v: 360, l: '6 h' }, { v: 480, l: '8 h (jornada)' }
+];
+// Color de las OT en el calendario según su estatus actual (cambia en tiempo real)
+const CAL_ESTATUS = {
+  POR_LEVANTAR: { l: 'Por levantar',           c: '#64748b' },
+  POR_RECIBIR:  { l: 'Por recibir',            c: '#c77700' },
+  POR_INICIAR:  { l: 'Por iniciar',            c: '#0b4f9e' },
+  EN_PROCESO:   { l: 'En proceso',             c: '#5a3fb8' },
+  FINALIZADO:   { l: 'Finalizado, por firmar', c: '#0e9f6e' },
+  ENTREGADA:    { l: 'Entregada',              c: '#94a3b8' }
+};
+// Depuración sugerida: evidencia de registros cerrados hace más de N días
+const RESPALDO = { diasAntiguedad: 30, palabraConfirmacion: 'LIMPIAR' };
 
 /* ---------- Catálogos ---------- */
 // Selector ESTRICTO de categorías para incidencias, órdenes de trabajo y solicitudes

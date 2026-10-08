@@ -17,6 +17,7 @@
       b.hidden = tec ? v !== 'misordenes' : (v === 'misordenes' || (v === 'bitacora' && !can('bitacora')));
     });
     $('#fab').classList.toggle('activo', can('capture'));
+    $('#btnRespaldo').hidden = !can('config');            // Respaldo y depuración: solo Administrador
     if (tec) UI.ir('misordenes');
     else if (UI.vista === 'misordenes' || (UI.vista === 'bitacora' && !can('bitacora'))) UI.ir('tablero');
   }
@@ -70,6 +71,7 @@
   // Navegación
   $$('.nav-tab').forEach(b => b.onclick = () => UI.ir(b.dataset.v));
   $('#btnExcel').onclick = exportarExcel;
+  $('#btnRespaldo').onclick = () => Respaldo.abrir();
   $('#drawerCerrar').onclick = () => Drawer.cerrar();
   $('#rpCerrar').onclick = () => Reporte.cerrar();
   $('#rpPdf').onclick = () => Reporte.pdf();

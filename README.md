@@ -18,7 +18,8 @@ Tablero de control de instalaciones y mantenimiento de activos de Innovaciones T
 | `js/mod-mantenimientos.js` | Módulo 3: mantenimientos programados |
 | `js/mod-kpis.js` | Módulo 4: inversión y consumo de servicios |
 | `js/mod-ot.js` | Módulo 5: órdenes de trabajo, ejecución interna o externa, pipeline del técnico, Mis órdenes y catálogo de técnicos |
-| `js/mod-calendario.js` | Calendario de mantenimientos, OT y levantamientos (FullCalendar 6) |
+| `js/mod-calendario.js` | Calendario de mantenimientos, OT y levantamientos (FullCalendar 6), color por estatus |
+| `js/mod-respaldo.js` | Respaldo ZIP y depuración de evidencia (solo Administrador) |
 | `js/mod-solicitudes.js` | Módulo 6: bandeja de solicitudes, liga y QR; bitácora |
 | `js/pdf.js` | Reporte de entrega de Trabajos Realizados (vista dividida y PDF jsPDF) |
 | `js/solicitud.js` | Lógica del formulario público |
@@ -69,6 +70,7 @@ Ajustes del listado original: ítem 37 «SITEMAS» se corrigió a «SISTEMAS» e
 Los códigos se cambian en `js/config.js` (`AUTH_CODES`). Los PIN de los técnicos se administran en **Órdenes de trabajo > Técnicos**.
 
 La Fase 2 (Operador técnico, tipo de ejecución y calendario) se detalla en `FASE2_CAMBIOS.md`.
+La Fase 3 (calendarización del técnico, levantamiento con materiales, evidencia del reporte y respaldo ZIP) se detalla en `FASE3_CAMBIOS.md`.
 
 ## 6. Flujo operativo (enfoque a procesos, ISO 9001:2015)
 

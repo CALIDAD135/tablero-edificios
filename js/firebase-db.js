@@ -155,6 +155,9 @@ const DB = {
     if (dataUrl) this._media[otId][clave] = dataUrl; else delete this._media[otId][clave];
   },
   eliminarMedia(otId) { delete this._media[otId]; return this.db.ref(`${FB.media}/${otId}`).remove(); },
+  /* Lectura directa del servidor, sin caché (respaldo ZIP) */
+  async mediaServidor(id) { const s = await this.db.ref(`${FB.media}/${id}`).get(); return s.val() || {}; },
+  limpiarCache() { this._media = {}; },
 
   /* ---------- Solicitudes públicas ---------- */
   gestionSolicitud(folio, campos) {

@@ -163,7 +163,7 @@ function slaHTML(o, compacto) {
   if (o.estatus === 'CANCELADA') return '<span class="muted">—</span>';
   const s = slaInfo(o);
   if (s.pendiente) return `<div class="sla sla-pend" data-sla-ot="${esc(o.id)}" data-c="${compacto ? 1 : 0}">
-    <div class="sla-txt"><span>Por recibir</span> <b>${fDur(s.reaccion)}</b>${compacto ? '' : ' desde la asignación'}</div></div>`;
+    <div class="sla-txt"><span>SLA sin iniciar:</span> <b>${fDur(s.reaccion)}</b>${compacto ? '' : ' desde la asignación'}</div></div>`;
   const w = Math.min(100, Math.round(s.pct * 100));
   const txt = s.cerrado ? (s.cumple ? 'Cumplió' : 'Excedió') : (s.estado === 'excedido' ? 'Excedido' : s.estado === 'riesgo' ? 'En riesgo' : 'En tiempo');
   return `<div class="sla sla-${s.estado}${s.cerrado ? ' sla-fin' : ''}" data-sla-ot="${esc(o.id)}" data-c="${compacto ? 1 : 0}">
@@ -590,7 +590,7 @@ function ranuraFoto(clave, etiqueta, dataUrl, editable) {
     <div class="foto-vista">${dataUrl ? `<img src="${dataUrl}" alt="${esc(etiqueta)}" data-zoom>` : `<span>${esc(etiqueta)}</span>`}</div>
     ${editable ? `<div class="foto-acc">
       <label class="btn btn-sm">Cámara<input type="file" accept="image/*" capture="environment" data-foto="${clave}" hidden></label>
-      <label class="btn btn-sm">Galería<input type="file" accept="image/*" data-foto="${clave}" hidden></label>
+      <label class="btn btn-sm">Galería<input type="file" accept="image/*" multiple data-foto="${clave}" hidden></label>
       ${dataUrl ? `<button type="button" class="btn btn-sm btn-ghost" data-quitar-foto="${clave}">Quitar</button>` : ''}
     </div>` : ''}
   </div>`;
@@ -686,6 +686,13 @@ const Firma = {
 function exportarExcel() {
   if (esTecnico()) return;
   if (typeof XLSX === 'undefined') { UI.toast('La librería de Excel no se cargó; revise su conexión.', 'err'); return; }
+  const wb = libroExcel();
+  const d = new Date();
+  XLSX.writeFile(wb, `Control_Edificios_IES_${ymdLocal(d).replace(/-/g, '')}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.xlsx`);
+  DB.log('EXPORTACION', 'excel', 'general', '');
+}
+/* Libro de Excel con todos los nodos (lo usa también el respaldo ZIP) */
+function libroExcel() {
   const wb = XLSX.utils.book_new();
   const hoja = (nombre, filas) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas.length ? filas : [{ Sin: 'registros' }]), nombre);
   hoja('Áreas', Areas.activas().sort((a, b) => (a.item || 999) - (b.item || 999)).map(a => ({
@@ -730,8 +737,10 @@ function exportarExcel() {
     Oficina: s.oficina, Categoría: s.categoria || '', Descripción: s.descripcion, Estado: (SOL_ESTADOS[(s.gestion || {}).estado || 'NUEVA'] || {}).l, OT: (s.gestion || {}).otFolio || ''
   })));
   hoja('Tareas PHVA', ST.tareas.map(t => ({ Título: t.titulo, Fase: (FASES_PHVA.find(f => f.k === t.fase) || {}).l || t.fase, Cuadrilla: t.cuadrilla || '', Compromiso: fFecha(t.fecha), Vínculo: t.vinculo || '', Cerrada: t.archivada ? fFecha(t.fechaCierre) : '' })));
-  if (can('bitacora')) hoja('Bitácora', ST.bitacora.map(b => ({ Fecha: fFechaHora(b.ts), Rol: b.rol, Acción: b.accion, Entidad: b.entidad, Referencia: b.ref, Detalle: b.detalle })));
-  const d = new Date();
-  XLSX.writeFile(wb, `Control_Edificios_IES_${ymdLocal(d).replace(/-/g, '')}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.xlsx`);
-  DB.log('EXPORTACION', 'excel', 'general', '');
+  hoja('Materiales levantamiento', ST.ordenes.flatMap(o => OT.matLev(o).map(x => ({
+    OT: o.folio, Oficina: o.oficina, Edificio: o.edificio, Técnico: OT.ejecutorTxt(o), Estatus: (OT_ESTATUS[o.estatus] || {}).l || o.estatus,
+    Material: x.desc, Cantidad: Number(x.cant) || 0, Unidad: x.unidad || '', Especificación: x.nota || '', Capturó: x.por || '', Actualizado: fFechaHora(x.actualizado)
+  }))));
+  if (can('bitacora')) hoja('Bitácora', ST.bitacora.map(b => ({ Fecha: fFechaHora(b.ts), Rol: b.rol, Usuario: b.usuario || '', Acción: b.accion, Entidad: b.entidad, Referencia: b.ref, Detalle: b.detalle })));
+  return wb;
 }

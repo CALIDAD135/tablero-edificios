@@ -19,6 +19,8 @@
 <!-- Fase 2: calendario (FullCalendar 6, incluye sus estilos) y traducción al español -->
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.15/locales/es.global.min.js"></script>
+<!-- Fase 3: compresión del respaldo ZIP (misma versión que Control Vehicular) -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
 <body>
 
@@ -53,6 +55,7 @@
       <span class="sync sync-off" id="syncBadge">Conectando</span>
       <span class="rol-badge" id="rolBadge">—</span>
       <button type="button" class="btn btn-sm" id="btnExcel" title="Descarga todos los registros en un libro de Excel">Exportar Excel</button>
+      <button type="button" class="btn btn-sm btn-success" id="btnRespaldo" hidden title="Respaldo ZIP completo y liberación de espacio en Firebase">Respaldo y depuración</button>
       <button type="button" class="btn btn-sm btn-ghost" id="btnSalir">Salir</button>
     </div>
   </div>
@@ -304,6 +307,7 @@
 <script src="js/mod-solicitudes.js"></script>
 <script src="js/mod-kpis.js"></script>
 <script src="js/pdf.js"></script>
+<script src="js/mod-respaldo.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

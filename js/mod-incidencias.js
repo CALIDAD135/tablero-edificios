@@ -116,6 +116,9 @@ const ModIncidencias = {
         </div>
         <label class="fl"><span>Solicitante (quien pide el trabajo)</span>${Personas.campo('iSol', i ? i.solicitanteNombre : '', i ? i.solicitanteId : '', 'Puede ser distinto al responsable del área')}</label>
         <label class="fl"><span>Descripción de la incidencia</span><textarea id="iDesc" rows="4" placeholder="Qué ocurre, dónde exactamente y desde cuándo"${dis}>${esc(i ? i.descripcion : '')}</textarea></label>
+        <div class="campo-sub"><b>Evidencia del reporte</b><span class="hint"> Hasta ${FOTOS.rep} fotografías. El técnico las verá en su orden de trabajo.</span>
+          ${i && i.evidenciaDepurada ? `<div class="aviso">Evidencia depurada el ${fFecha(i.evidenciaDepurada)}; consulte el respaldo ZIP.</div>` : ''}
+          <div class="fotos fotos-4" id="iFotos"></div></div>
         ${i && i.motivoCancelacion ? `<div class="aviso">Motivo de cancelación: ${esc(i.motivoCancelacion)}</div>` : ''}`,
       acciones: editable ? [{ texto: 'Cancelar' }, {
         texto: i ? 'Guardar cambios' : 'Registrar incidencia', clase: 'btn-primary', fn: async mm => {
@@ -137,7 +140,11 @@ const ModIncidencias = {
             datos.folio = await DB.reservarFolio('INC');
             datos.estatus = 'ABIERTA'; datos.creadoPor = SESION.rol;
             Object.assign(datos, pre.extra || {});
-            await DB.guardar('incidencias', datos);
+            const nid = await DB.guardar('incidencias', datos);
+            // Fotografías capturadas antes de existir la incidencia: se guardan en edificios_media/{incidenciaId}
+            const claves = Object.keys(fotos).filter(k => fotos[k]);
+            for (const k of claves) await DB.guardarMedia(nid, k, fotos[k]);
+            if (claves.length) await DB.actualizar('incidencias', nid, { fotos: claves.reduce((r, k) => (r[k] = true, r), {}) });
             DB.log('ALTA', 'incidencias', datos.folio, `${cat}, ${datos.oficina}: ${desc}`);
             UI.toast(`Incidencia ${datos.folio} registrada.`, 'ok');
           }
@@ -145,6 +152,9 @@ const ModIncidencias = {
       }] : [{ texto: 'Cerrar' }]
     });
     AreaPicker.init('ip', i ? i.areaId : pre.areaId);
+    const fotos = {};
+    if (i) DB.media(i.id).then(md => { Object.assign(fotos, md); OT.montarFotos(m.q('#iFotos'), 'rep', fotos, editable, i.id, { nodo: 'incidencias' }); }).catch(() => {});
+    else OT.montarFotos(m.q('#iFotos'), 'rep', fotos, editable, null);
     if (!editable) $$('.area-picker select', m.el).forEach(s => s.disabled = true);
     Personas.activar(m.q('#iSol'), { flag: 'esSolicitante' });
     if (!editable) m.q('#iSol').disabled = true;

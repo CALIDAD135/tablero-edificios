@@ -6,13 +6,16 @@
      · mantenimientos/{id}  fechas ejecutadas, próxima fecha y proyección por periodicidad
      · ordenes/{id}         agendaEjecucion (interno o externo) y agendaLevantamiento
    Vistas: Mes, Semana, Hoy (día actual) y Agenda (lista semanal, ideal en celular).
+   Fase 3: las OT se pintan con el color de su estatus actual (CAL_ESTATUS) y se
+   actualizan en tiempo real cuando el técnico calendariza o avanza su pipeline.
+   Las de proveedor externo se distinguen con rayado; los levantamientos, con contorno.
    ========================================================================== */
 
 const CAL_TIPOS = {
-  mant:    { l: 'Mantenimiento programado', c: CAL_COLORES.mant },
-  interno: { l: 'OT personal interno',      c: CAL_COLORES.interno },
-  externo: { l: 'OT proveedor externo',     c: CAL_COLORES.externo },
-  lev:     { l: 'Levantamiento agendado',   c: CAL_COLORES.levantamiento }
+  mant:    { l: 'Mantenimientos',          cls: 'sw-mant' },
+  interno: { l: 'OT personal interno',     cls: 'sw-int' },
+  externo: { l: 'OT proveedor externo',    cls: 'sw-ext' },
+  lev:     { l: 'Levantamientos agendados', cls: 'sw-lev' }
 };
 
 const ModCalendario = {
@@ -20,10 +23,13 @@ const ModCalendario = {
   filtros: { mant: true, interno: true, externo: true, lev: true },
 
   init() {
-    $('#calFiltros').innerHTML = Object.keys(CAL_TIPOS).map(k => `<label class="cal-f">
-        <input type="checkbox" data-cf="${k}" checked><i style="background:${CAL_TIPOS[k].c}"></i>${CAL_TIPOS[k].l}</label>`).join('') +
-      `<span class="cal-f cal-f-nota"><i style="background:${CAL_COLORES.mantEjecutado}"></i>Mantenimiento ejecutado</span>
-       <span class="cal-f cal-f-nota"><i style="background:${CAL_COLORES.mantVencido}"></i>Mantenimiento vencido</span>`;
+    $('#calFiltros').innerHTML = `<div class="cal-fila"><span class="cal-t">Mostrar</span>${Object.keys(CAL_TIPOS).map(k => `<label class="cal-f">
+        <input type="checkbox" data-cf="${k}" checked><i class="${CAL_TIPOS[k].cls}"></i>${CAL_TIPOS[k].l}</label>`).join('')}</div>
+      <div class="cal-fila"><span class="cal-t">Estatus de OT</span>${Object.keys(CAL_ESTATUS).map(k => `<span class="cal-f cal-f-nota"><i style="background:${CAL_ESTATUS[k].c}"></i>${CAL_ESTATUS[k].l}</span>`).join('')}</div>
+      <div class="cal-fila"><span class="cal-t">Mantenimiento</span>
+        <span class="cal-f cal-f-nota"><i style="background:${CAL_COLORES.mant}"></i>Programado</span>
+        <span class="cal-f cal-f-nota"><i style="background:${CAL_COLORES.mantEjecutado}"></i>Ejecutado</span>
+        <span class="cal-f cal-f-nota"><i style="background:${CAL_COLORES.mantVencido}"></i>Vencido</span></div>`;
     $('#calFiltros').addEventListener('change', e => {
       const x = e.target.closest('[data-cf]'); if (!x) return;
       this.filtros[x.dataset.cf] = x.checked; this.refrescar();
@@ -46,7 +52,7 @@ const ModCalendario = {
   crear() {
     const movil = matchMedia('(max-width: 760px)').matches;
     this.cal = new FullCalendar.Calendar($('#calendario'), {
-      locale: 'es', firstDay: 1, height: 'auto', nowIndicator: true, dayMaxEvents: 4,
+      locale: 'es', firstDay: 1, height: 'auto', nowIndicator: true, dayMaxEvents: 4, eventDisplay: 'block',
       initialView: movil ? 'listWeek' : 'dayGridMonth',
       customButtons: {
         hoy: { text: 'Hoy', hint: 'Ver el día de hoy', click: () => { this.cal.changeView('timeGridDay'); this.cal.today(); } }
@@ -106,21 +112,20 @@ const ModCalendario = {
       if (o.estatus === 'CANCELADA') return;
       if (tec && o.tecnicoId !== tec) return;
       const tipo = o.tipoEjecucion === 'INTERNO' ? 'interno' : 'externo';
-      const hecho = ['CULMINADA', 'ENTREGADA'].includes(o.estatus);
+      const est = OT.estatusCal(o), ce = CAL_ESTATUS[est];
       const quien = OT.ejecutorTxt(o);
       if (o.agendaEjecucion && f[tipo]) {
-        const c = CAL_TIPOS[tipo].c;
         ev.push({
-          id: `oe-${o.id}`, title: `${o.folio} ${o.oficina}`, start: o.agendaEjecucion, end: masMin(o.agendaEjecucion, CAL_DURACION.ejecucion),
-          backgroundColor: c, borderColor: c, classNames: hecho ? ['ev-hecho'] : [],
-          extendedProps: { tipo: 'ot', otId: o.id, tip: `${o.folio}: ejecución agendada\n${o.oficina}, ${tituloEdificio(o.edificio)}\n${o.categoria}. ${TIPOS_EJECUCION[o.tipoEjecucion] ? TIPOS_EJECUCION[o.tipoEjecucion].l + ': ' : ''}${quien}\nEstatus: ${(OT_ESTATUS[o.estatus] || {}).l || o.estatus}` }
+          id: `oe-${o.id}`, title: `${o.folio} ${o.oficina}`, start: o.agendaEjecucion, end: masMin(o.agendaEjecucion, Number(o.agendaDuracionMin) || CAL_DURACION.ejecucion),
+          backgroundColor: ce.c, borderColor: ce.c, classNames: [tipo === 'externo' ? 'ev-ext' : 'ev-int', ...(est === 'ENTREGADA' ? ['ev-hecho'] : [])],
+          extendedProps: { tipo: 'ot', otId: o.id, tip: `${o.folio}: ejecución agendada\n${o.oficina}, ${tituloEdificio(o.edificio)}\n${o.categoria}. ${TIPOS_EJECUCION[o.tipoEjecucion] ? TIPOS_EJECUCION[o.tipoEjecucion].l + ': ' : ''}${quien}\nEstatus: ${ce.l}${o.agendadoPor ? '\nProgramó: ' + o.agendadoPor : ''}` }
         });
       }
       if (o.agendaLevantamiento && f.lev) {
         const c = CAL_COLORES.levantamiento;
         ev.push({
           id: `ol-${o.id}`, title: `Levantamiento ${o.oficina}`, start: o.agendaLevantamiento, end: masMin(o.agendaLevantamiento, CAL_DURACION.levantamiento),
-          backgroundColor: c, borderColor: c, classNames: o.fechaLevantamiento ? ['ev-hecho'] : [],
+          backgroundColor: '#ffffff', borderColor: c, textColor: c, classNames: ['ev-lev', ...(o.fechaLevantamiento ? ['ev-hecho'] : [])],
           extendedProps: { tipo: 'ot', otId: o.id, tip: `${o.folio}: levantamiento en sitio\n${o.oficina}, ${tituloEdificio(o.edificio)}\n${quien || 'Sin asignar'}${o.fechaLevantamiento ? '\nRealizado ' + fFechaHora(o.fechaLevantamiento) : ''}` }
         });
       }

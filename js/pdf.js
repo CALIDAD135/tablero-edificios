@@ -27,7 +27,7 @@ const Reporte = {
     this.otId = otId;
     const media = await DB.media(otId, true).catch(() => ({}));
     this.d = await this.datos(o, media);
-    this.opc.fotos = this.d.fotosAntes.length + this.d.fotosDespues.length > 0;
+    this.opc.fotos = this.nFotos(this.d) > 0 || !!this.d.depurada;
     if (esTecnico()) this.opc.costos = false;
     this.abierto = true;
     document.body.classList.add('rp-open');
@@ -41,11 +41,10 @@ const Reporte = {
     const a = Areas.porId(o.areaId);
     const org = o.origen || {};
     const s = slaInfo(o);
-    const fa = [], fd = [];
-    for (let i = 0; i < FOTOS_N; i++) {
-      if (media['antes_' + i]) fa.push(await medirImagen(media['antes_' + i]));
-      if (media['despues_' + i]) fd.push(await medirImagen(media['despues_' + i]));
-    }
+    const medir = async (md, fase) => { const r = []; for (const k of OT.fotosDe(md, fase)) r.push(await medirImagen(md[k])); return r.filter(Boolean); };
+    const fa = await medir(media, 'antes'), fd = await medir(media, 'despues');
+    let fr = await medir(media, 'rep');
+    if (org.tipo === 'INCIDENCIA' && org.id) fr = fr.concat(await medir(await DB.media(org.id).catch(() => ({})), 'rep'));
     return {
       o, folio: o.folio, estatus: o.estatus,
       solicitudFolio: org.tipo === 'SOLICITUD' ? org.folio : org.tipo === 'INCIDENCIA' ? `Incidencia ${org.folio}` : org.tipo === 'MANTENIMIENTO' ? 'Mantenimiento programado' : 'Levantamiento en sitio',
@@ -57,7 +56,7 @@ const Reporte = {
       materiales: lista(o.materiales), costos: OT.costos(o),
       fechaSolicitud: o.fechaSolicitud, fechaLevantamiento: o.fechaLevantamiento, fechaCulminacion: o.fechaCulminacion, fechaEntrega: o.fechaEntrega,
       sla: s, tiempoTotal: o.fechaCulminacion && o.fechaSolicitud ? new Date(o.fechaCulminacion) - new Date(o.fechaSolicitud) : null,
-      fotosAntes: fa.filter(Boolean), fotosDespues: fd.filter(Boolean),
+      fotosRep: fr, fotosAntes: fa, fotosDespues: fd, depurada: o.evidenciaDepurada || '',
       entregaNombre: o.entregaNombre || '', recibeNombre: o.recibeNombre || '',
       firmaEntrega: await medirImagen(media.firmaEntrega), firmaRecibe: await medirImagen(media.firmaRecibe),
       fechaFirmaEntrega: o.fechaFirmaEntrega, fechaFirmaRecibe: o.fechaFirmaRecibe,
@@ -84,7 +83,7 @@ const Reporte = {
       ${o.estatus !== 'ENTREGADA' ? `<div class="aviso">Vista previa. El reporte queda definitivo al entregar el trabajo con ambas firmas.</div>` : ''}
       <div class="rp-sec"><h3>Contenido</h3>
         <label class="chk"${esTecnico() ? ' hidden' : ''}><input type="checkbox" id="rpCostos"${this.opc.costos ? ' checked' : ''}> Incluir materiales con costos</label>
-        <label class="chk"><input type="checkbox" id="rpFotos"${this.opc.fotos ? ' checked' : ''}${d.fotosAntes.length + d.fotosDespues.length ? '' : ' disabled'}> Incluir evidencia fotográfica (${d.fotosAntes.length + d.fotosDespues.length})</label>
+        <label class="chk"><input type="checkbox" id="rpFotos"${this.opc.fotos ? ' checked' : ''}${this.nFotos(d) ? '' : ' disabled'}> Incluir evidencia fotográfica (${this.nFotos(d)})</label>
       </div>
       <div class="rp-sec"><h3>Observaciones de entrega</h3>
         <textarea id="rpObs" rows="4" placeholder="Garantías, recomendaciones de uso o pendientes acordados"${can('capture') ? '' : ' disabled'}>${esc(d.obsEntrega)}</textarea>
@@ -128,6 +127,7 @@ const Reporte = {
     const lin = (l, v, cls) => `<div class="rp-c ${cls || ''}"><span class="rp-l">${esc(l)}</span><span class="rp-v">${esc(v || '—')}</span></div>`;
     const img = (f, alt) => `<div class="rp-ph">${f ? `<img src="${f.src}" alt="${esc(alt)}">` : ''}</div>`;
     const mats = d.materiales.filter(m => m.desc);
+    const secFotos = c.fotos && (this.nFotos(d) || d.depurada);
     $('#rpSheet').innerHTML = `
       <header class="rp-h">
         <img class="rp-logo" src="${LOGO_IES}" alt="IES">
@@ -151,13 +151,13 @@ const Reporte = {
         ${mats.map(m => `<tr><td>${esc(m.desc)}</td><td class="num">${nfmt(m.cant, 2).replace(/\.00$/, '')}</td><td>${esc(m.unidad || '')}</td>${c.costos ? `<td class="num">${money(m.costo)}</td><td class="num">${money(m.cant * m.costo)}</td>` : ''}</tr>`).join('')}
         ${c.costos ? `<tr class="tot"><td colspan="4">Materiales</td><td class="num">${money(d.costos.materiales)}</td></tr><tr class="tot"><td colspan="4">Mano de obra</td><td class="num">${money(d.costos.manoObra)}</td></tr><tr class="tot"><td colspan="4"><b>Total</b></td><td class="num"><b>${money(d.costos.total)}</b></td></tr>` : ''}
         </tbody></table>` : (c.costos && d.costos.total ? `<div class="rp-row r1">${lin('Costo total (mano de obra)', money(d.costos.total))}</div>` : '')}
-      ${c.fotos && (d.fotosAntes.length || d.fotosDespues.length) ? `<h4 class="rp-bar">3. Evidencia fotográfica</h4>
-        ${d.fotosAntes.length ? `<div class="rp-fot"><span class="rp-l">Antes</span><div>${d.fotosAntes.map((f, i) => img(f, 'Antes ' + (i + 1))).join('')}</div></div>` : ''}
-        ${d.fotosDespues.length ? `<div class="rp-fot"><span class="rp-l">Después</span><div>${d.fotosDespues.map((f, i) => img(f, 'Después ' + (i + 1))).join('')}</div></div>` : ''}` : ''}
-      <h4 class="rp-bar">${c.fotos && (d.fotosAntes.length || d.fotosDespues.length) ? 4 : 3}. Fechas de control</h4>
+      ${secFotos ? `<h4 class="rp-bar">3. Evidencia fotográfica</h4>
+        ${this.gruposFotos(d).map(([l, fs]) => `<div class="rp-fot"><span class="rp-l">${l}</span><div>${fs.map((f, i) => img(f, l + ' ' + (i + 1))).join('')}</div></div>`).join('')}
+        ${!this.nFotos(d) && d.depurada ? `<p class="rp-nota">Evidencia fotográfica depurada el ${fFecha(d.depurada)}; se conserva en el respaldo ZIP.</p>` : ''}` : ''}
+      <h4 class="rp-bar">${secFotos ? 4 : 3}. Fechas de control</h4>
       <div class="rp-row r4">${lin('Fecha de solicitud del usuario', fFechaHora(d.fechaSolicitud))}${lin('Levantamiento', fFechaHora(d.fechaLevantamiento))}${lin('Culminación de trabajos', fFechaHora(d.fechaCulminacion))}${lin('Tiempo de atención (SLA)', this.slaTexto(d), d.fechaCulminacion ? (d.sla.cumple ? 'ok' : 'bad') : '')}</div>
       ${d.tiempoTotal != null ? `<p class="rp-nota">Tiempo total desde la solicitud del usuario hasta la culminación: ${fDur(d.tiempoTotal)}.</p>` : ''}
-      <h4 class="rp-bar">${c.fotos && (d.fotosAntes.length || d.fotosDespues.length) ? 5 : 4}. Conformidad</h4>
+      <h4 class="rp-bar">${secFotos ? 5 : 4}. Conformidad</h4>
       <p class="rp-decl">${esc(DECLARACION)}</p>
       ${d.obsEntrega ? `<div class="rp-txt"><span class="rp-l">Observaciones de entrega</span><p>${esc(d.obsEntrega)}</p></div>` : ''}
       <div class="rp-firmas">
@@ -188,9 +188,18 @@ const Reporte = {
   imprimir() { window.print(); },
 
   /* ---------- PDF nativo (A4, milímetros) ---------- */
+  nFotos(d) { return d.fotosRep.length + d.fotosAntes.length + d.fotosDespues.length; },
+  gruposFotos(d) { return [['Evidencia del reporte', d.fotosRep], ['Antes', d.fotosAntes], ['Después', d.fotosDespues]].filter(g => g[1].length); },
+
   pdf() {
     if (!window.jspdf) { UI.toast('La librería jsPDF no se cargó; revise su conexión.', 'err'); return; }
-    const d = this.d, c = this.opc;
+    const doc = this.documento(this.d, this.opc);
+    doc.save(`Entrega_${this.d.folio}.pdf`);
+    DB.log('PDF', 'ordenes', this.d.folio, 'Reporte de entrega descargado');
+  },
+
+  /* Construye el PDF sin descargarlo; lo usan la descarga y el respaldo ZIP */
+  documento(d, c) {
     const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
     const W = 210, H = 297, M = 12, CW = W - 2 * M, LIM = H - 17;
     const AZ = [11, 79, 158], AZC = [227, 238, 251], LN = [159, 183, 211], MU = [66, 86, 111], NE = [0, 0, 0];
@@ -320,20 +329,26 @@ const Reporte = {
       fila([{ l: 'Costo total (mano de obra)', v: money(d.costos.total), w: 1 }]);
     }
 
-    if (c.fotos && (d.fotosAntes.length || d.fotosDespues.length)) {
+    if (c.fotos && (this.nFotos(d) || d.depurada)) {
       y += 3; barra(`${n++}. Evidencia fotográfica`);
       const gap = 3, cw = (CW - gap * 2) / 3, ch = 46;
-      [['Antes', d.fotosAntes], ['Después', d.fotosDespues]].forEach(([l, fs]) => {
-        if (!fs.length) return;
-        asegurar(ch + 8);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(7.6); doc.setTextColor(...MU); doc.text(T(l), M, y + 4); y += 5.5;
-        fs.forEach((f, i) => {
-          const x = M + i * (cw + gap);
-          doc.setDrawColor(...LN); doc.setLineWidth(0.25); doc.setFillColor(245, 248, 252); doc.rect(x, y, cw, ch, 'FD');
-          imagenEn(f, x + 0.8, y + 0.8, cw - 1.6, ch - 1.6, 'JPEG');
-        });
-        y += ch + 2;
+      this.gruposFotos(d).forEach(([l, fs]) => {
+        // Renglones de tres fotografías; cada renglón cabe completo en la página
+        for (let r = 0; r < fs.length; r += 3) {
+          asegurar(ch + (r ? 2 : 8));
+          if (!r) { doc.setFont('helvetica', 'bold'); doc.setFontSize(7.6); doc.setTextColor(...MU); doc.text(T(l), M, y + 4); y += 5.5; }
+          fs.slice(r, r + 3).forEach((f, i) => {
+            const x = M + i * (cw + gap);
+            doc.setDrawColor(...LN); doc.setLineWidth(0.25); doc.setFillColor(245, 248, 252); doc.rect(x, y, cw, ch, 'FD');
+            imagenEn(f, x + 0.8, y + 0.8, cw - 1.6, ch - 1.6, 'JPEG');
+          });
+          y += ch + 2;
+        }
       });
+      if (!this.nFotos(d) && d.depurada) {
+        asegurar(6); doc.setFont('helvetica', 'italic'); doc.setFontSize(7.8); doc.setTextColor(...MU);
+        doc.text(T(`Evidencia fotográfica depurada el ${fFecha(d.depurada)}; se conserva en el respaldo ZIP.`), M, y + 4); y += 6;
+      }
     }
 
     y += 3; barra(`${n++}. Fechas de control`);
@@ -380,8 +395,7 @@ const Reporte = {
       doc.text(T(`Página ${p} de ${tot}`), W - M, H - 8, { align: 'right' });
     }
     doc.setProperties({ title: `${APP.tituloReporte} ${d.folio}`, subject: d.oficina, author: APP.departamento, creator: `${APP.nombre} IES` });
-    doc.save(`Entrega_${d.folio}.pdf`);
-    DB.log('PDF', 'ordenes', d.folio, 'Reporte de entrega descargado');
+    return doc;
   }
 };
 
