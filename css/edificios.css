@@ -442,3 +442,91 @@ main { max-width: 1500px; margin: 0 auto; padding: 18px 20px 90px }
   body.rp-open .rp-sheet { position: static !important; transform: none !important; box-shadow: none !important }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+
+/* ==========================================================================
+   FASE 2 — Rol técnico, ejecución interna/externa y calendario
+   ========================================================================== */
+.roles { grid-template-columns: 1fr 1fr }
+.bloque-ext { border-left: 4px solid var(--amb) }
+.nota-tec { background: var(--panel2); border: 1px solid var(--line2); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; font-size: 13px }
+.nota-tec p { white-space: pre-wrap; margin-top: 2px }
+.sla-pend .sla-txt span { color: var(--amb); margin: 0 4px 0 0 }
+
+/* Modo técnico: sin exportaciones ni accesos administrativos */
+body.modo-tecnico #btnExcel, body.modo-tecnico .fab { display: none !important }
+body.modo-tecnico .nav { display: none }
+body.modo-tecnico main { max-width: 720px }
+
+/* Mis órdenes */
+.mo-head h2 { font-size: 22px; color: var(--deep); font-stretch: 92% }
+.mo-head p { color: var(--muted); font-size: 13px; margin-bottom: 12px }
+.mo-resumen { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 14px }
+.mo-k { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 4px; text-align: center; display: flex; flex-direction: column }
+.mo-k b { font-size: 20px; color: var(--soft) } .mo-k.on b { color: var(--accent) }
+.mo-k span { font-size: 10.5px; color: var(--muted); line-height: 1.2 }
+.mo-lista { display: flex; flex-direction: column; gap: 10px }
+.mo-sec { font-size: 14px; color: var(--muted); margin: 10px 0 0 }
+.mo-card { font: inherit; text-align: left; width: 100%; background: var(--panel); border: 1px solid var(--line); border-left: 5px solid #9fb2c8; border-radius: 12px; padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; color: var(--txt); box-shadow: var(--sh) }
+.mo-card.prio-alta { border-left-color: var(--red) } .mo-card.prio-media { border-left-color: var(--amb) }
+.mo-card:active { background: #f5f9ff }
+.mo-top { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--muted) }
+.mo-of { font-size: 17px; font-weight: 750; font-stretch: 88%; color: var(--deep) }
+.mo-ub { font-size: 13px; color: var(--muted) }
+.mo-ag { font-size: 12.5px; font-weight: 650; color: var(--mor) }
+.mo-prog { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 6px }
+.mo-prog i { height: 6px; border-radius: 3px; background: #e4ecf6 }
+.mo-prog i.ok { background: var(--ok) } .mo-prog i.act { background: var(--sky) }
+.mo-paso { font-size: 13px; font-weight: 650 }
+
+/* Pipeline del técnico */
+.pp-head { border: 1px solid var(--line2); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; background: var(--panel2); display: flex; flex-direction: column; gap: 8px }
+.pp-ubic b { display: block; font-size: 18px; font-stretch: 88%; color: var(--deep) }
+.pp-ubic span { font-size: 13px; color: var(--muted) }
+.pp-tags { display: flex; flex-wrap: wrap; gap: 4px }
+.pp-datos { display: grid; grid-template-columns: 110px 1fr; gap: 4px 10px; font-size: 13px }
+.pp-datos dt { color: var(--muted); font-weight: 600 }
+.pp-pasos { list-style: none; display: flex; flex-direction: column; gap: 0 }
+.pp-paso { display: grid; grid-template-columns: 36px 1fr; gap: 12px; position: relative; padding-bottom: 16px }
+.pp-paso:not(:last-child)::before { content: ''; position: absolute; left: 17px; top: 36px; bottom: 0; width: 2px; background: var(--line) }
+.pp-paso.hecho:not(:last-child)::before { background: var(--ok) }
+.pp-num { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; background: #fff; border: 2px solid var(--line); color: var(--soft) }
+.pp-paso.hecho .pp-num { background: var(--ok); border-color: var(--ok); color: #fff }
+.pp-paso.actual .pp-num { background: var(--accent); border-color: var(--accent); color: #fff }
+.pp-cont h4 { font-size: 15px; margin-top: 7px; color: var(--deep) }
+.pp-cont > p { font-size: 12.5px; color: var(--muted); margin-bottom: 8px }
+.pp-paso.bloq { opacity: .5 }
+.pp-paso.actual .pp-cont { background: #fff; border: 1px solid var(--accent); border-radius: 12px; padding: 4px 12px 12px; box-shadow: 0 4px 14px rgba(11, 79, 158, .12) }
+.pp-firma { display: grid; grid-template-columns: 110px 1fr auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-left: 4px solid var(--amb); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px }
+.pp-firma.ok { border-left-color: var(--ok) }
+.pp-firma-img { height: 48px; display: flex; align-items: center; justify-content: center; background: var(--panel2); border-radius: 6px; font-size: 11.5px; color: var(--soft) }
+.pp-firma-img img { max-height: 46px; max-width: 100% }
+.pp-firma div:nth-child(2) { display: flex; flex-direction: column; font-size: 13px }
+.pp-firma div:nth-child(2) span { color: var(--muted); font-size: 12px }
+.pp-fin { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; background: #dcf3e8; border: 1px solid #a7dcc3; border-radius: 12px; padding: 12px 14px; color: #0a5e3b }
+@media (max-width: 520px) { .pp-firma { grid-template-columns: 80px 1fr } .pp-firma .btn { grid-column: 1 / -1 } .mo-k span { font-size: 9.5px } }
+
+/* Calendario (FullCalendar con la paleta IES) */
+.cal-filtros { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-bottom: 12px; font-size: 13px }
+.cal-f { display: inline-flex; align-items: center; gap: 7px; cursor: pointer }
+.cal-f i { width: 12px; height: 12px; border-radius: 3px; display: inline-block }
+.cal-f-nota { cursor: default; color: var(--muted) }
+.cal-wrap {
+  --fc-border-color: var(--line2); --fc-page-bg-color: #fff; --fc-neutral-bg-color: var(--panel2);
+  --fc-today-bg-color: #eaf3fe; --fc-now-indicator-color: var(--red);
+  --fc-button-bg-color: #fff; --fc-button-border-color: var(--line); --fc-button-text-color: var(--accent);
+  --fc-button-hover-bg-color: #e9f2fd; --fc-button-hover-border-color: var(--accent);
+  --fc-button-active-bg-color: var(--accent); --fc-button-active-border-color: var(--accent);
+  --fc-list-event-hover-bg-color: #f5f9ff;
+  font-size: 13px
+}
+.cal-wrap.fc .fc-button { font-weight: 600; font-size: 13px; text-transform: none; box-shadow: none !important }
+.cal-wrap.fc .fc-button-primary:not(:disabled).fc-button-active, .cal-wrap.fc .fc-button-primary:not(:disabled):active { color: #fff }
+.cal-wrap.fc .fc-toolbar-title { font-size: 18px; color: var(--deep); font-weight: 750 }
+.cal-wrap.fc .fc-toolbar-title::first-letter { text-transform: uppercase }
+.cal-wrap.fc .fc-col-header-cell-cushion, .cal-wrap.fc .fc-daygrid-day-number { color: var(--deep); text-decoration: none }
+.cal-wrap.fc .fc-col-header-cell-cushion { display: inline-block }
+.cal-wrap.fc .fc-col-header-cell-cushion::first-letter, .cal-wrap.fc .fc-list-day-text::first-letter { text-transform: uppercase }
+.cal-wrap .fc-event { cursor: pointer; border-radius: 4px; font-size: 12px }
+.cal-wrap .fc-event.ev-hecho { opacity: .5 }
+.cal-wrap .fc-event.ev-hecho .fc-event-title { text-decoration: line-through }
+@media (max-width: 760px) { .cal-wrap.fc .fc-toolbar { flex-wrap: wrap; gap: 6px } .cal-wrap.fc .fc-toolbar-title { font-size: 15px } }

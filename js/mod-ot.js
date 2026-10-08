@@ -1,12 +1,23 @@
 /* ==========================================================================
    CONTROL DE EDIFICIOS · IES
-   js/mod-ot.js — Módulo 5: Órdenes de trabajo y levantamientos en sitio
-   Flujo: Levantada → En proceso → Culminada → Entregada (con firmas)
-   SLA: tiempo exacto desde el levantamiento hasta la culminación.
+   js/mod-ot.js — Módulo 5: Órdenes de trabajo (Fase 2)
+   · Tipo de ejecución obligatorio: Personal interno (técnico asignado) o
+     Proveedor externo (seguimiento corporativo de Administrador y Auxiliar).
+   · Pipeline móvil del Operador técnico: Levantamiento → Confirmar recibido →
+     Iniciar → Culminar → Firmas (genera el PDF de entrega).
+   · SLA: en OT internas corre desde el recibido del técnico; en externas y
+     anteriores, desde el levantamiento. Siempre se detiene en la culminación.
    ========================================================================== */
 
 const ORIGEN_TXT = { INCIDENCIA: 'Incidencia', SOLICITUD: 'Solicitud de usuario', MANTENIMIENTO: 'Mantenimiento programado', LEVANTAMIENTO: 'Levantamiento en sitio' };
 const FOTOS_N = 3;
+const PASOS_TEC = [
+  { k: 'lev', l: 'Levantamiento',      d: 'Fotos del antes y diagnóstico inicial' },
+  { k: 'rec', l: 'Confirmar recibido', d: 'Inicia el SLA de atención' },
+  { k: 'ini', l: 'Iniciar trabajos',   d: 'La orden pasa a En proceso' },
+  { k: 'cul', l: 'Culminar trabajos',  d: 'Fotos del después; la orden queda Finalizada' },
+  { k: 'fir', l: 'Firmas',             d: 'Quien recibe y técnico; genera el PDF de entrega' }
+];
 
 const OT = {
   costos(o) {
@@ -16,15 +27,98 @@ const OT = {
   },
   porId(id) { return ST.ordenes.find(o => o.id === id); },
   origenTxt(o) { const t = (o.origen && o.origen.tipo) || 'LEVANTAMIENTO'; return ORIGEN_TXT[t] + (o.origen && o.origen.folio && t !== 'MANTENIMIENTO' ? ` ${o.origen.folio}` : ''); },
+  ejecutorTxt(o) {
+    if (o.tipoEjecucion === 'INTERNO') return Tecnicos.nombre(o.tecnicoId) || o.ejecutor || 'Técnico sin asignar';
+    return o.proveedor || o.ejecutor || '';
+  },
+  tipoTag(o) {
+    const t = TIPOS_EJECUCION[o.tipoEjecucion];
+    return t ? `<span class="tag ${t.c}">${esc(t.l)}</span>` : '<span class="tag t-gris">Sin definir</span>';
+  },
+  /* Estatus legible: distingue los pasos del técnico dentro de «Levantada» */
+  tag(o) {
+    const t = (c, l) => `<span class="tag ${c}">${l}</span>`;
+    if (o.estatus === 'LEVANTADA' && o.tipoEjecucion === 'INTERNO' && o.tecnicoId) {
+      if (!o.fechaLevantamiento) return t('t-azul', 'Asignada');
+      if (!o.fechaRecibido) return t('t-azul', 'Por recibir');
+      return t('t-azul', 'Recibida');
+    }
+    if (esTecnico() && o.estatus === 'CULMINADA') return t('t-ambar', 'Finalizado, por firmar');
+    return tag(OT_ESTATUS, o.estatus);
+  },
+  /* Paso vigente del pipeline del técnico (0 a 4; 5 = entregada) */
+  paso(o) {
+    if (o.estatus === 'ENTREGADA') return 5;
+    if (!o.fechaLevantamiento) return 0;
+    if (!o.fechaRecibido) return 1;
+    if (!o.fechaInicio) return 2;
+    if (!o.fechaCulminacion) return 3;
+    return 4;
+  },
+  proveedoresConocidos() {
+    return [...new Set([...ST.ordenes.map(o => o.proveedor), ...ST.mantenimientos.map(p => p.proveedor)].filter(Boolean).map(mayus))].sort();
+  },
 
-  /* ---------- Levantamiento en sitio (vista optimizada para tablet y celular) ---------- */
+  /* ---------- Campos de ejecución (generación y edición de la OT) ---------- */
+  ejecucionHTML(pref, o = {}, editable = true) {
+    const dis = editable ? '' : ' disabled';
+    const tecs = Tecnicos.activos();
+    const actual = o.tecnicoId && !tecs.some(t => t.id === o.tecnicoId) ? [{ v: o.tecnicoId, l: (Tecnicos.nombre(o.tecnicoId) || 'Técnico no disponible') + ' (inactivo)' }] : [];
+    return `<fieldset class="seg seg-req"><legend>Tipo de ejecución (obligatorio)</legend>
+        ${Object.keys(TIPOS_EJECUCION).map(k => `<label><input type="radio" name="${pref}TE" value="${k}"${o.tipoEjecucion === k ? ' checked' : ''}${dis}> ${TIPOS_EJECUCION[k].l}</label>`).join('')}
+      </fieldset>
+      <div id="${pref}Int" hidden>
+        <label class="fl"><span>Operador técnico asignado</span><select id="${pref}Tec"${dis}>${opciones([...actual, ...tecs.map(t => ({ v: t.id, l: t.nombre }))], o.tecnicoId, 'Seleccione al técnico')}</select></label>
+        ${tecs.length ? '' : `<p class="aviso">No hay técnicos registrados. ${can('config') ? 'Dé de alta al personal en Órdenes de trabajo, botón Técnicos.' : 'Solicite al Administrador que los registre.'}</p>`}
+      </div>
+      <div id="${pref}Ext" hidden>
+        <label class="fl"><span>Proveedor externo</span><input id="${pref}Prov" list="${pref}DlProv" value="${esc(o.proveedor || (o.tipoEjecucion === 'EXTERNO' ? o.ejecutor || '' : ''))}" placeholder="Razón social o nombre comercial"${dis}></label>
+        <datalist id="${pref}DlProv">${this.proveedoresConocidos().map(p => `<option value="${esc(p)}">`).join('')}</datalist>
+        <p class="hint">La orden queda en la bandeja de seguimiento de proveedores del Administrador y el Auxiliar.</p>
+      </div>
+      <div class="fg2">
+        <label class="fl"><span>Levantamiento agendado en sitio</span><input type="datetime-local" id="${pref}AgL" value="${o.agendaLevantamiento ? localInput(o.agendaLevantamiento) : ''}"${dis}></label>
+        <label class="fl"><span>Ejecución agendada</span><input type="datetime-local" id="${pref}AgE" value="${o.agendaEjecucion ? localInput(o.agendaEjecucion) : ''}"${dis}></label>
+      </div>`;
+  },
+  ejecucionInit(pref, m, alCambiar) {
+    const vis = () => {
+      const r = m.q(`input[name=${pref}TE]:checked`), v = r ? r.value : '';
+      m.q('#' + pref + 'Int').hidden = v !== 'INTERNO';
+      m.q('#' + pref + 'Ext').hidden = v !== 'EXTERNO';
+      alCambiar && alCambiar(v);
+    };
+    $$(`input[name=${pref}TE]`, m.el).forEach(r => r.onchange = vis);
+    vis();
+  },
+  ejecucionLeer(pref, m) {
+    const r = m.q(`input[name=${pref}TE]:checked`), tipo = r ? r.value : '';
+    const faltan = [], d = { tipoEjecucion: tipo };
+    if (!tipo) faltan.push('tipo de ejecución');
+    if (tipo === 'INTERNO') {
+      d.tecnicoId = m.q('#' + pref + 'Tec').value; d.proveedor = '';
+      if (!d.tecnicoId) faltan.push('técnico asignado');
+      d.ejecutor = Tecnicos.nombre(d.tecnicoId);
+    }
+    if (tipo === 'EXTERNO') {
+      d.proveedor = mayus(m.q('#' + pref + 'Prov').value); d.tecnicoId = '';
+      if (!d.proveedor) faltan.push('proveedor externo');
+      d.ejecutor = d.proveedor;
+    }
+    d.agendaLevantamiento = desdeLocalInput(m.q('#' + pref + 'AgL').value);
+    d.agendaEjecucion = desdeLocalInput(m.q('#' + pref + 'AgE').value);
+    return { d, faltan };
+  },
+
+  /* ---------- Generación de la OT (desde levantamiento, incidencia, solicitud o mantenimiento) ---------- */
   levantamiento(pre = {}) {
     if (!can('capture')) return;
     const fotos = {};
     const general = pre.ubicacionGeneral || '';
+    const preOT = { tipoEjecucion: pre.tipoEjecucion || (pre.ejecutor ? 'EXTERNO' : ''), proveedor: pre.ejecutor || '', tecnicoId: pre.tecnicoId || '' };
     const m = UI.modal({
-      titulo: 'Levantamiento en sitio', clase: 'm-campo m-fija', ancho: '860px',
-      sub: pre.origen ? `Origen: ${esc(ORIGEN_TXT[pre.origen.tipo] || '')} ${esc(pre.origen.folio || '')}` : 'Al generar la orden inicia el conteo del SLA.',
+      titulo: 'Nueva orden de trabajo', clase: 'm-campo m-fija', ancho: '860px',
+      sub: pre.origen ? `Origen: ${esc(ORIGEN_TXT[pre.origen.tipo] || '')} ${esc(pre.origen.folio || '')}` : 'Levantamiento en sitio o asignación desde escritorio.',
       cuerpo: `
         <section class="campo-sec"><h3>Ubicación</h3>
           ${general ? `<label class="chk"><input type="checkbox" id="lGen" checked> Ubicación general: ${esc(general === 'TODAS LAS INSTALACIONES' ? 'todas las instalaciones' : tituloEdificio(general))}</label>` : ''}
@@ -35,7 +129,11 @@ const OT = {
             <label class="fl"><span>Categoría</span><select id="lCat">${opciones(CATEGORIAS, pre.categoria, 'Seleccione la categoría')}</select></label>
             <label class="fl"><span>Prioridad y meta de atención</span><select id="lPrio">${opciones(Object.keys(PRIORIDADES).map(k => ({ v: k, l: `${PRIORIDADES[k].l}: ${PRIORIDADES[k].h} h` })), pre.prioridad || 'MEDIA')}</select></label>
           </div>
-          <label class="fl"><span>Hallazgo y descripción técnica</span><textarea id="lHall" rows="4" placeholder="Condición encontrada, causa probable y trabajo a realizar">${esc(pre.hallazgo || '')}</textarea></label>
+          <label class="fl"><span>Hallazgo o trabajo solicitado</span><textarea id="lHall" rows="4" placeholder="Condición encontrada, causa probable y trabajo a realizar">${esc(pre.hallazgo || '')}</textarea></label>
+        </section>
+        <section class="campo-sec"><h3>Ejecución</h3>
+          ${this.ejecucionHTML('le', preOT, true)}
+          <label class="chk" id="lHechoWrap" hidden><input type="checkbox" id="lHecho"> El levantamiento en sitio ya se realizó (el técnico inicia en Confirmar recibido)</label>
         </section>
         <section class="campo-sec"><h3>Solicitante</h3>
           <label class="fl"><span>Nombre</span>${Personas.campo('lSol', pre.solicitanteNombre, pre.solicitanteId, 'Quien pide el trabajo')}</label>
@@ -44,7 +142,7 @@ const OT = {
             <label class="fl"><span>Teléfono</span><input id="lTel" inputmode="tel" value="${esc(pre.solicitanteTel || '')}"></label>
           </div>
         </section>
-        <section class="campo-sec"><h3>Evidencia fotográfica inicial</h3>
+        <section class="campo-sec"><h3>Evidencia fotográfica inicial (opcional)</h3>
           <div class="fotos" id="lFotos"></div>
         </section>`,
       acciones: [{ texto: 'Cancelar' }, {
@@ -52,35 +150,42 @@ const OT = {
           const usaGen = general && mm.q('#lGen') && mm.q('#lGen').checked;
           const areaId = usaGen ? '' : AreaPicker.valor('lp');
           const cat = mm.q('#lCat').value, hall = mm.q('#lHall').value.trim();
+          const ej = this.ejecucionLeer('le', mm);
           const f = [];
           if (!usaGen && !areaId) f.push('ubicación'); if (!CATEGORIAS.includes(cat)) f.push('categoría'); if (!hall) f.push('hallazgo');
+          f.push(...ej.faltan);
           if (f.length) { UI.toast('Falta: ' + f.join(', ') + '.', 'err'); return false; }
           const correo = mm.q('#lCor').value.trim(), tel = mm.q('#lTel').value.trim();
           const sol = await Personas.resolver(mm.q('#lSol'), 'esSolicitante', { correo, telefono: tel });
           const ahora = nowISO();
+          const interno = ej.d.tipoEjecucion === 'INTERNO';
+          const levHecho = interno && mm.q('#lHecho').checked;
           const ub = usaGen ? { areaId: '', edificio: general, nivel: 'GENERAL', oficina: 'ÁREAS GENERALES', departamento: 'ÁREAS COMUNES' } : ubicacion(areaId);
-          const o = Object.assign(ub, {
+          const o = Object.assign(ub, ej.d, {
             folio: await DB.reservarFolio('OT'),
             origen: pre.origen || { tipo: 'LEVANTAMIENTO', id: '', folio: '' },
             categoria: cat, prioridad: mm.q('#lPrio').value, slaHorasMeta: PRIORIDADES[mm.q('#lPrio').value].h,
             hallazgo: hall, solicitanteId: sol ? sol.id : '', solicitanteNombre: sol ? sol.nombre : '',
             solicitanteCorreo: correo || (sol && sol.correo) || '', solicitanteTel: tel || (sol && sol.telefono) || '',
-            fechaSolicitud: pre.fechaSolicitud || ahora, fechaLevantamiento: ahora,
-            estatus: 'LEVANTADA', ejecutor: pre.ejecutor || '', materiales: [], manoObra: 0,
+            fechaSolicitud: pre.fechaSolicitud || ahora, fechaGeneracion: ahora,
+            // Interno: el levantamiento lo registra el técnico (paso 1), salvo que ya se haya hecho en sitio
+            fechaLevantamiento: !interno || levHecho ? ahora : '', diagnostico: levHecho ? hall : '',
+            estatus: 'LEVANTADA', materiales: [], manoObra: 0,
             fotos: Object.keys(fotos).reduce((r, k) => (r[k] = true, r), {}), firmas: { entrega: false, recibe: false },
             creadoPor: SESION.rol
           });
           const id = await DB.guardar('ordenes', o);
           for (const k of Object.keys(fotos)) await DB.guardarMedia(id, k, fotos[k]);
           await this.propagar(Object.assign({ id }, o), 'LEVANTADA');
-          DB.log('ALTA', 'ordenes', o.folio, `${cat}, ${o.oficina}. SLA ${o.slaHorasMeta} h`);
-          UI.toast(`Orden ${o.folio} generada. El SLA inicia ahora.`, 'ok');
+          DB.log('ALTA', 'ordenes', o.folio, `${cat}, ${o.oficina}. ${TIPOS_EJECUCION[o.tipoEjecucion].l}: ${o.ejecutor}`);
+          UI.toast(interno ? `Orden ${o.folio} asignada a ${o.ejecutor}. El SLA inicia cuando confirme de recibido.` : `Orden ${o.folio} generada para ${o.ejecutor}. El SLA inicia ahora.`, 'ok', 6000);
           setTimeout(() => this.abrir(id), 250);
         }
       }]
     });
     AreaPicker.init('lp', pre.areaId);
     if (general) { const s = () => { m.q('#lAreaWrap').hidden = m.q('#lGen').checked; }; m.q('#lGen').onchange = s; s(); }
+    this.ejecucionInit('le', m, v => { m.q('#lHechoWrap').hidden = v !== 'INTERNO'; });
     Personas.activar(m.q('#lSol'), {
       flag: 'esSolicitante', alElegir: p => { if (p.correo && !m.q('#lCor').value) m.q('#lCor').value = p.correo; if (p.telefono && !m.q('#lTel').value) m.q('#lTel').value = p.telefono; }
     });
@@ -113,34 +218,39 @@ const OT = {
     };
   },
 
-  /* ---------- Ficha de la orden de trabajo ---------- */
+  /* ---------- Ficha de la OT (Administrador, Auxiliar y Gerencia) ---------- */
   async abrir(id) {
+    if (esTecnico()) return this.pipeline(id);
     const o = this.porId(id); if (!o) { UI.toast('Orden no encontrada.', 'err'); return; }
     const media = await DB.media(id).catch(() => ({}));
     const abierta = OT_ABIERTAS.includes(o.estatus);
     const ed = can('capture') && abierta;
     const dis = ed ? '' : ' disabled';
-    const pasos = [['LEVANTADA', 'Levantada', o.fechaLevantamiento], ['EN_PROCESO', 'En proceso', o.fechaInicio], ['CULMINADA', 'Culminada', o.fechaCulminacion], ['ENTREGADA', 'Entregada', o.fechaEntrega]];
-    const idxAct = pasos.findIndex(p => p[0] === o.estatus);
+    const interno = o.tipoEjecucion === 'INTERNO' && o.tecnicoId;
+    const pasos = interno
+      ? [['Asignada', otGeneracion(o)], ['Levantamiento', o.fechaLevantamiento], ['Recibida', o.fechaRecibido], ['En proceso', o.fechaInicio], ['Culminada', o.fechaCulminacion], ['Entregada', o.fechaEntrega]]
+      : [['Levantada', o.fechaLevantamiento || otGeneracion(o)], ['En proceso', o.fechaInicio], ['Culminada', o.fechaCulminacion], ['Entregada', o.fechaEntrega]];
+    const idxAct = pasos.findIndex(p => !p[1]);
     const s = slaInfo(o);
-    const acciones = [];
+    const acciones = [{ texto: 'Cerrar', clase: 'btn-ghost' }];
     if (can('capture') && abierta) acciones.push({ texto: 'Cancelar OT', clase: 'btn-ghost txt-rojo', fn: () => this.cancelar(o) });
     if (can('capture')) acciones.push({ texto: 'Agregar tarea PHVA', clase: 'btn-ghost', fn: () => { ModTareas.editar(null, { vinculo: o.folio, areaId: o.areaId, categoria: o.categoria, titulo: '' }); return false; }, cierra: false });
+    if (can('capture') && interno && abierta) acciones.push({ texto: 'Vista del técnico', clase: 'btn-ghost', fn: () => { setTimeout(() => this.pipeline(o.id), 120); } });
     if (['CULMINADA', 'ENTREGADA'].includes(o.estatus)) acciones.push({ texto: 'Reporte de entrega', clase: '', fn: () => { Reporte.abrir(o.id); } });
     if (ed) acciones.push({ texto: 'Guardar cambios', clase: '', cierra: false, fn: async mm => { await this.guardarFicha(o, mm); UI.toast('Cambios guardados.', 'ok'); return false; } });
     if (ed && o.estatus === 'LEVANTADA') acciones.push({ texto: 'Iniciar trabajos', clase: 'btn-primary', fn: mm => this.iniciar(o, mm) });
     if (ed && o.estatus === 'EN_PROCESO') acciones.push({ texto: 'Registrar culminación', clase: 'btn-primary', fn: mm => this.culminar(o, mm) });
     if (ed && o.estatus === 'CULMINADA') acciones.push({ texto: 'Entregar y generar reporte', clase: 'btn-success', fn: mm => this.entregar(o, mm) });
-    acciones.unshift({ texto: 'Cerrar', clase: 'btn-ghost' });
 
     const m = UI.modal({
       titulo: `Orden de trabajo ${o.folio}`, clase: 'm-ot', ancho: '1040px',
-      sub: `${tag(OT_ESTATUS, o.estatus)} ${tagPrioridad(o.prioridad)} <span class="muted">${esc(this.origenTxt(o))}</span>`,
+      sub: `${this.tag(o)} ${tagPrioridad(o.prioridad)} ${this.tipoTag(o)} <span class="muted">${esc(this.origenTxt(o))}</span>`,
       cuerpo: `
-        <ol class="stepper">${pasos.map((p, i) => `<li class="${i < idxAct || o.estatus === 'ENTREGADA' ? 'hecho' : i === idxAct ? 'actual' : ''}${o.estatus === 'CANCELADA' ? ' canc' : ''}"><b>${p[1]}</b><span>${p[2] ? fFechaHora(p[2]) : '—'}</span></li>`).join('')}</ol>
+        <ol class="stepper" style="grid-template-columns:repeat(${pasos.length},1fr)">${pasos.map((p, i) => `<li class="${p[1] ? 'hecho' : i === idxAct ? 'actual' : ''}${o.estatus === 'CANCELADA' ? ' canc' : ''}"><b>${p[0]}</b><span>${p[1] ? fFechaHora(p[1]) : '—'}</span></li>`).join('')}</ol>
         ${o.estatus === 'CANCELADA' ? `<div class="aviso">Orden cancelada: ${esc(o.motivoCancelacion || '')}</div>` : ''}
+        ${!o.tipoEjecucion && abierta ? '<div class="aviso">Orden anterior a la Fase 2: defina el tipo de ejecución y guarde los cambios.</div>' : ''}
         <div class="ot-sla">
-          <div><span class="muted">Tiempo de atención (SLA)</span>${slaHTML(o)}</div>
+          <div><span class="muted">${interno ? 'SLA de atención (desde el recibido)' : 'Tiempo de atención (SLA)'}</span>${slaHTML(o)}</div>
           <div><span class="muted">Meta por prioridad</span><b>${s.metaH} h</b></div>
           <div><span class="muted">Solicitud del usuario</span><b>${fFechaHora(o.fechaSolicitud)}</b></div>
           <div><span class="muted">Costo total</span><b id="oTotal">${money(this.costos(o).total)}</b></div>
@@ -155,7 +265,7 @@ const OT = {
               <label class="fl"><span>Categoría</span><select id="oCat"${dis}>${opciones(CATEGORIAS, o.categoria)}</select></label>
               <label class="fl"><span>Departamento al que se carga</span><select id="oDep"${dis}>${opciones(DEPARTAMENTOS, o.departamento || 'SIN ASIGNAR')}</select></label>
             </div>
-            <label class="fl"><span>Hallazgo</span><textarea id="oHall" rows="3"${dis}>${esc(o.hallazgo || '')}</textarea></label>
+            <label class="fl"><span>Hallazgo o trabajo solicitado</span><textarea id="oHall" rows="3"${dis}>${esc(o.hallazgo || '')}</textarea></label>
             <label class="fl"><span>Solicitante</span><input id="oSol" value="${esc(o.solicitanteNombre || '')}"${dis}></label>
             <div class="fg2">
               <label class="fl"><span>Correo</span><input id="oCor" value="${esc(o.solicitanteCorreo || '')}"${dis}></label>
@@ -163,7 +273,9 @@ const OT = {
             </div>
           </section>
           <section class="ot-sec"><h3>Ejecución</h3>
-            <label class="fl"><span>Ejecutado por (cuadrilla o proveedor)</span><input id="oEje" value="${esc(o.ejecutor || '')}"${dis}></label>
+            ${this.ejecucionHTML('oe', o, ed)}
+            ${o.diagnostico ? `<div class="nota-tec"><b>Diagnóstico inicial del técnico</b><p>${esc(o.diagnostico)}</p></div>` : ''}
+            ${o.materialesTecnico ? `<div class="nota-tec"><b>Materiales reportados por el técnico</b><p>${esc(o.materialesTecnico)}</p></div>` : ''}
             <label class="fl"><span>Trabajos realizados</span><textarea id="oTrab" rows="4" placeholder="Descripción de lo ejecutado; aparecerá en el reporte de entrega"${dis}>${esc(o.trabajos || '')}</textarea></label>
             <div class="mat-head"><span>Materiales y refacciones</span>${ed ? '<button type="button" class="btn btn-sm" id="oMatAdd">Agregar renglón</button>' : ''}</div>
             <div class="tblwrap"><table class="tbl mat"><thead><tr><th>Descripción</th><th>Cant.</th><th>Unidad</th><th>Costo unit.</th><th>Importe</th>${ed ? '<th></th>' : ''}</tr></thead><tbody id="oMat"></tbody></table></div>
@@ -182,10 +294,12 @@ const OT = {
         </section>`,
       acciones
     });
+    this.ejecucionInit('oe', m);
 
     // Materiales
     const mats = lista(o.materiales).map(x => Object.assign({}, x));
     const tb = m.q('#oMat');
+    const totalMat = () => { m.q('#oTotal').textContent = money(this.costos({ materiales: mats, manoObra: m.q('#oMO').value }).total); };
     const pintarMat = () => {
       tb.innerHTML = mats.length ? mats.map((x, i) => `<tr>
         <td><input data-i="${i}" data-k="desc" value="${esc(x.desc || '')}"${dis}></td>
@@ -197,8 +311,7 @@ const OT = {
         : `<tr><td colspan="${ed ? 6 : 5}" class="muted">Sin materiales registrados.</td></tr>`;
       totalMat();
     };
-    const totalMat = () => { m.q('#oTotal').textContent = money(this.costos({ materiales: mats, manoObra: m.q('#oMO').value }).total); };
-    // Se actualiza solo el importe del renglón y el total, sin redibujar la tabla (conserva el foco al tabular)
+    // Solo se actualiza el importe del renglón y el total (conserva el foco al tabular)
     tb.addEventListener('input', e => {
       const t = e.target; if (t.dataset.i == null) return;
       const x = mats[t.dataset.i]; x[t.dataset.k] = t.type === 'number' ? Number(t.value) : t.value;
@@ -232,48 +345,69 @@ const OT = {
     pintarFirmas();
     m.q('#oFirmas').addEventListener('click', e => {
       const b = e.target.closest('[data-firmar]'); if (!b) return;
-      this.firmar(id, b.dataset.firmar, async () => { Object.assign(media, await DB.media(id)); pintarFirmas(); });
+      this.firmar(id, b.dataset.firmar, async () => { Object.assign(media, await DB.media(id, true)); pintarFirmas(); });
     });
   },
 
+  /* despues(clave, nombre, ts) se invoca al guardar la firma */
   firmar(id, clave, despues) {
     const o = this.porId(id);
     const entrega = clave === 'firmaEntrega';
+    let nombres = null, nombre;
+    if (entrega) {
+      if (esTecnico()) nombre = SESION.nombre;   // el técnico firma con su propio nombre
+      else {
+        nombres = [...new Set([o.tipoEjecucion === 'INTERNO' ? Tecnicos.nombre(o.tecnicoId) : '', ...PERSONAL_AF].filter(Boolean))];
+        nombre = o.entregaNombre || (o.tipoEjecucion === 'INTERNO' ? Tecnicos.nombre(o.tecnicoId) : '');
+      }
+    } else nombre = o.recibeNombre || o.solicitanteNombre || Areas.responsable(Areas.porId(o.areaId));
     Firma.capturar({
-      titulo: entrega ? 'Firma de quien entrega el trabajo' : 'Firma de quien recibe de conformidad',
-      etiquetaNombre: entrega ? 'Personal de Activos Fijos que entrega' : 'Nombre de quien recibe',
-      nombres: entrega ? PERSONAL_AF : null,
-      nombre: entrega ? o.entregaNombre : (o.recibeNombre || o.solicitanteNombre || Areas.responsable(Areas.porId(o.areaId))),
-      alGuardar: async (dataUrl, nombre) => {
+      titulo: entrega ? (esTecnico() ? 'Firma del técnico que entrega' : 'Firma de quien entrega el trabajo') : 'Firma de quien recibe de conformidad',
+      etiquetaNombre: entrega ? (esTecnico() ? 'Técnico que entrega' : 'Personal que entrega') : 'Nombre de quien recibe',
+      nombres, nombre,
+      alGuardar: async (dataUrl, nom) => {
+        if (entrega && esTecnico()) nom = SESION.nombre;
         await DB.guardarMedia(id, clave, dataUrl);
-        const c = entrega ? { entregaNombre: nombre, fechaFirmaEntrega: nowISO(), 'firmas/entrega': true } : { recibeNombre: nombre, fechaFirmaRecibe: nowISO(), 'firmas/recibe': true };
+        const ts = nowISO();
+        const c = entrega ? { entregaNombre: nom, fechaFirmaEntrega: ts, 'firmas/entrega': true } : { recibeNombre: nom, fechaFirmaRecibe: ts, 'firmas/recibe': true };
         await DB.actualizar('ordenes', id, c);
-        DB.log('FIRMA', 'ordenes', o.folio, `${entrega ? 'Entrega' : 'Recibe'}: ${nombre}`);
+        DB.log('FIRMA', 'ordenes', o.folio, `${entrega ? 'Entrega' : 'Recibe'}: ${nom}`);
         UI.toast('Firma guardada.', 'ok');
-        despues && despues();
+        despues && despues(clave, nom, ts);
       }
     });
   },
 
   leerFicha(o, m) {
+    const ej = this.ejecucionLeer('oe', m);
+    if (ej.faltan.length) throw new Error('Falta: ' + ej.faltan.join(', ') + '.');
     const mats = (m.mats || []).filter(x => String(x.desc || '').trim()).map(x => ({ desc: String(x.desc).trim(), cant: Number(x.cant) || 0, unidad: mayus(x.unidad || 'PZA'), costo: Number(x.costo) || 0 }));
-    return {
+    return Object.assign(ej.d, {
       categoria: m.q('#oCat').value, departamento: m.q('#oDep').value, hallazgo: m.q('#oHall').value.trim(),
       solicitanteNombre: mayus(m.q('#oSol').value), solicitanteCorreo: m.q('#oCor').value.trim(), solicitanteTel: m.q('#oTel').value.trim(),
-      ejecutor: mayus(m.q('#oEje').value), trabajos: m.q('#oTrab').value.trim(), materiales: mats,
+      trabajos: m.q('#oTrab').value.trim(), materiales: mats,
       manoObra: Number(m.q('#oMO').value) || 0, observaciones: m.q('#oObs').value.trim()
-    };
+    });
   },
   async guardarFicha(o, m) {
     const d = this.leerFicha(o, m);
+    // Cambio a personal interno: la OT sigue el pipeline del técnico desde el paso que corresponda
+    if (d.tipoEjecucion === 'INTERNO' && !o.fechaGeneracion) {
+      d.fechaGeneracion = otGeneracion(o);
+      // OT anterior a la Fase 2 con levantamiento hecho: el SLA conserva su inicio original
+      if (o.fechaLevantamiento && !o.fechaRecibido) d.fechaRecibido = o.fechaLevantamiento;
+    }
     await DB.actualizar('ordenes', o.id, d);
-    DB.log('EDICION', 'ordenes', o.folio, `Total ${money(this.costos(d).total)}`);
+    const reasig = (o.tecnicoId || '') !== (d.tecnicoId || '') || (o.tipoEjecucion || '') !== d.tipoEjecucion;
+    DB.log('EDICION', 'ordenes', o.folio, `${reasig ? `Ejecución: ${TIPOS_EJECUCION[d.tipoEjecucion].l}, ${d.ejecutor}. ` : ''}Total ${money(this.costos(d).total)}`);
     return d;
   },
 
   async iniciar(o, m) {
     await this.guardarFicha(o, m);
-    await DB.actualizar('ordenes', o.id, { estatus: 'EN_PROCESO', fechaInicio: nowISO() });
+    const ahora = nowISO();
+    // Si el Administrador inicia por el técnico, se completan los pasos previos con la hora actual
+    await DB.actualizar('ordenes', o.id, { estatus: 'EN_PROCESO', fechaInicio: ahora, fechaRecibido: o.fechaRecibido || ahora, fechaLevantamiento: o.fechaLevantamiento || otGeneracion(o) });
     DB.log('INICIO', 'ordenes', o.folio, '');
     UI.toast('Trabajos iniciados.', 'ok');
     setTimeout(() => this.abrir(o.id), 200);
@@ -284,25 +418,24 @@ const OT = {
     if (!d.trabajos) { UI.toast('Describa los trabajos realizados antes de registrar la culminación.', 'err'); m.q('#oTrab').classList.add('err'); return false; }
     let fecha = null;
     const defecto = localInput(nowISO());
+    const base = slaInicio(o) || otGeneracion(o);
     await new Promise(res => UI.modal({
       titulo: 'Registrar culminación', ancho: '480px', alCerrar: res,
       cuerpo: `<p class="m-msg">La culminación detiene el contador del SLA. Si registra después de terminar, ajuste la hora real.</p>
         <label class="fl"><span>Fecha y hora de culminación</span><input type="datetime-local" id="cFec" value="${defecto}" max="${defecto}"></label>`,
       acciones: [{ texto: 'Cancelar' }, { texto: 'Registrar culminación', clase: 'btn-primary', fn: mm => {
         const raw = mm.q('#cFec').value;
-        // Sin cambios en el campo: se toma la hora exacta (con segundos)
-        let v = raw === defecto ? nowISO() : desdeLocalInput(raw);
-        const lev = new Date(o.fechaLevantamiento), levMin = new Date(lev); levMin.setSeconds(0, 0);
-        if (!v || new Date(v) < levMin) { UI.toast('La culminación no puede ser anterior al levantamiento.', 'err'); return false; }
+        let v = raw === defecto ? nowISO() : desdeLocalInput(raw);   // sin cambios: hora exacta con segundos
+        const lev = new Date(base), levMin = new Date(lev); levMin.setSeconds(0, 0);
+        if (!v || new Date(v) < levMin) { UI.toast('La culminación no puede ser anterior al inicio del SLA.', 'err'); return false; }
         if (new Date(v) > new Date(Date.now() + 60000)) { UI.toast('La culminación no puede ser una fecha futura.', 'err'); return false; }
-        // El campo trabaja por minutos: si coincide con el minuto del levantamiento, se respeta el instante del levantamiento
         if (new Date(v) < lev) v = lev.toISOString();
         fecha = v;
       } }]
     }));
     if (!fecha) return false;
     d.estatus = 'CULMINADA'; d.fechaCulminacion = fecha;
-    if (!o.fechaInicio) d.fechaInicio = o.fechaLevantamiento;
+    if (!o.fechaInicio) d.fechaInicio = base;
     await DB.actualizar('ordenes', o.id, d);
     const s = slaInfo(Object.assign({}, o, d));
     DB.log('CULMINACION', 'ordenes', o.folio, `Tiempo ${fDur(s.transc)} de ${s.metaH} h: ${s.cumple ? 'cumple' : 'excede'} SLA`);
@@ -318,9 +451,9 @@ const OT = {
     if (!media.firmaEntrega) falta.push('quien entrega'); if (!media.firmaRecibe) falta.push('quien recibe');
     if (falta.length) { UI.toast('Falta la firma de ' + falta.join(' y ') + '.', 'err'); return false; }
     await DB.actualizar('ordenes', o.id, { estatus: 'ENTREGADA', fechaEntrega: nowISO() });
-    const fin = Object.assign({}, oo, { estatus: 'ENTREGADA' });
+    const fin = Object.assign({}, oo, o, { estatus: 'ENTREGADA' });
     await this.propagar(fin, 'ENTREGADA');
-    DB.log('ENTREGA', 'ordenes', o.folio, `Entrega ${oo.entregaNombre}, recibe ${oo.recibeNombre}`);
+    DB.log('ENTREGA', 'ordenes', o.folio, `Entrega ${fin.entregaNombre || ''}, recibe ${fin.recibeNombre || ''}`);
     UI.toast(`Orden ${o.folio} entregada. Generando reporte…`, 'ok');
     setTimeout(() => Reporte.abrir(o.id, { descargar: true }), 300);
   },
@@ -350,60 +483,285 @@ const OT = {
       }
       if (org.tipo === 'MANTENIMIENTO' && org.id && evento === 'ENTREGADA') {
         const p = ST.mantenimientos.find(x => x.id === org.id);
-        if (p) await Mant.registrarEjecucion(p, { fecha: ymdLocal(o.fechaCulminacion || nowISO()), costo: this.costos(o).total, proveedor: o.ejecutor || '', otId: o.id, otFolio: o.folio, obs: 'Registrada al entregar la orden de trabajo' });
+        if (p) await Mant.registrarEjecucion(p, { fecha: ymdLocal(o.fechaCulminacion || nowISO()), costo: this.costos(o).total, proveedor: this.ejecutorTxt(o), otId: o.id, otFolio: o.folio, obs: 'Registrada al entregar la orden de trabajo' });
       }
     } catch (e) { console.warn('propagar', e); UI.toast('La orden se guardó, pero no se pudo actualizar su origen: ' + e.message, 'err'); }
+  },
+
+  /* ==========================================================================
+     Pipeline de ejecución móvil (Operador técnico)
+     ========================================================================== */
+  async pipeline(id) {
+    const o0 = this.porId(id);
+    if (!o0) { UI.toast('Orden no encontrada.', 'err'); return; }
+    if (esTecnico() && o0.tecnicoId !== SESION.tecnicoId) { UI.toast('Esta orden no está asignada a usted.', 'err'); return; }
+    if (!esTecnico() && !can('capture')) return;
+    const media = Object.assign({}, await DB.media(id, true).catch(() => ({})));
+    const local = Object.assign({}, o0);      // estado vigente de esta sesión
+    let ocupado = false;
+    const m = UI.modal({
+      titulo: `Orden ${o0.folio}`, clase: 'm-campo m-pipe m-fija', ancho: '720px',
+      sub: esTecnico() ? 'Avance paso a paso. Cada botón actualiza el estatus y el SLA en tiempo real.' : `Vista del técnico: ${esc(Tecnicos.nombre(o0.tecnicoId))}`,
+      cuerpo: '<div id="ppBody"></div>',
+      acciones: [{ texto: 'Cerrar', clase: 'btn-ghost' }]
+    });
+    const cuerpo = m.q('#ppBody');
+    const cuenta = fase => Object.keys(media).filter(k => k.startsWith(fase + '_') && media[k]).length;
+
+    const pintar = () => {
+      const o = local, paso = this.paso(o);
+      const tel = String(o.solicitanteTel || '').replace(/\D/g, '');
+      const ag = [o.agendaLevantamiento ? `Levantamiento ${fFechaHora(o.agendaLevantamiento)}` : '', o.agendaEjecucion ? `Ejecución ${fFechaHora(o.agendaEjecucion)}` : ''].filter(Boolean).join('. ');
+      const hechoTxt = i => [fFechaHora(o.fechaLevantamiento), fFechaHora(o.fechaRecibido), fFechaHora(o.fechaInicio), fFechaHora(o.fechaCulminacion), fFechaHora(o.fechaEntrega)][i];
+      const ctrl = i => {
+        if (i === 0) return `<div class="fotos" id="ppFotA"></div>
+          <label class="fl"><span>Diagnóstico inicial</span><textarea id="ppDiag" rows="4" placeholder="Condición encontrada, causa probable y trabajo a realizar">${esc(o.diagnostico || '')}</textarea></label>
+          <button type="button" class="btn btn-primary btn-grande" data-pp="lev">Registrar levantamiento</button>`;
+        if (i === 1) return '<button type="button" class="btn btn-primary btn-grande" data-pp="rec">Confirmar recibido</button>';
+        if (i === 2) return '<button type="button" class="btn btn-primary btn-grande" data-pp="ini">Iniciar trabajos</button>';
+        if (i === 3) return `<div class="fotos" id="ppFotD"></div>
+          <label class="fl"><span>Trabajos realizados</span><textarea id="ppTrab" rows="4" placeholder="Qué se hizo; aparecerá en el reporte de entrega">${esc(o.trabajos || '')}</textarea></label>
+          <label class="fl"><span>Materiales utilizados (opcional)</span><textarea id="ppMat" rows="2" placeholder="Material y cantidad; Activos Fijos registra los costos">${esc(o.materialesTecnico || '')}</textarea></label>
+          <button type="button" class="btn btn-primary btn-grande" data-pp="cul">Culminar trabajos</button>`;
+        if (i === 4) {
+          const caja = (k, t, n) => `<div class="pp-firma${media[k] ? ' ok' : ''}">
+            <div class="pp-firma-img">${media[k] ? `<img src="${media[k]}" alt="Firma ${esc(t)}">` : '<span>Pendiente</span>'}</div>
+            <div><b>${t}</b><span>${esc(n || '')}</span></div>
+            <button type="button" class="btn ${media[k] ? 'btn-ghost' : 'btn-primary'}" data-pp-firma="${k}">${media[k] ? 'Volver a firmar' : 'Firmar'}</button></div>`;
+          return caja('firmaRecibe', 'Quien recibe', o.recibeNombre || o.solicitanteNombre) + caja('firmaEntrega', 'Técnico', o.entregaNombre || Tecnicos.nombre(o.tecnicoId)) +
+            '<p class="hint">Al guardar ambas firmas la orden se entrega y se genera el PDF de entrega.</p>';
+        }
+        return '';
+      };
+      cuerpo.innerHTML = `
+        <div class="pp-head">
+          <div class="pp-ubic"><b>${esc(o.oficina)}</b><span>${esc(tituloEdificio(o.edificio))}, ${esc(tituloNivel(o.nivel).toLowerCase())}</span></div>
+          <div class="pp-tags">${this.tag(o)} ${tagPrioridad(o.prioridad)} <span class="tag t-gris">${esc(o.categoria)}</span></div>
+          ${o.estatus !== 'ENTREGADA' ? slaHTML(o) : ''}
+          <dl class="pp-datos">
+            <dt>Trabajo solicitado</dt><dd>${esc(o.hallazgo || '')}</dd>
+            <dt>Solicitante</dt><dd>${esc(o.solicitanteNombre || '—')}${tel ? ` <a class="btn btn-sm" href="tel:${tel}">Llamar</a>` : ''}</dd>
+            ${ag ? `<dt>Agenda</dt><dd>${esc(ag)}</dd>` : ''}
+          </dl>
+        </div>
+        ${o.estatus === 'CANCELADA' ? `<div class="aviso">Orden cancelada: ${esc(o.motivoCancelacion || '')}</div>` : `
+        <ol class="pp-pasos">${PASOS_TEC.map((p, i) => `
+          <li class="pp-paso ${i < paso ? 'hecho' : i === paso ? 'actual' : 'bloq'}">
+            <div class="pp-num" aria-hidden="true">${i < paso ? '✓' : i + 1}</div>
+            <div class="pp-cont"><h4>${p.l}</h4><p>${i < paso ? 'Registrado ' + hechoTxt(i) : p.d}</p>${i === paso ? ctrl(i) : ''}</div>
+          </li>`).join('')}</ol>
+        ${paso === 5 ? `<div class="pp-fin"><b>Trabajo entregado</b><span>${fFechaHora(o.fechaEntrega)}</span><button type="button" class="btn btn-primary btn-grande" data-pp="pdf">Ver reporte de entrega</button></div>` : ''}`}`;
+      if (paso === 0) this.montarFotos(cuerpo.querySelector('#ppFotA'), 'antes', media, true, id);
+      if (paso === 3) this.montarFotos(cuerpo.querySelector('#ppFotD'), 'despues', media, true, id);
+    };
+
+    const paso = async (k, btn) => {
+      if (ocupado) return;
+      const o = local; let c = null, logTxt = '';
+      if (k === 'lev') {
+        const diag = cuerpo.querySelector('#ppDiag').value.trim();
+        if (!cuenta('antes')) { UI.toast('Tome al menos una foto del antes.', 'err'); return; }
+        if (!diag) { UI.toast('Escriba el diagnóstico inicial.', 'err'); cuerpo.querySelector('#ppDiag').classList.add('err'); return; }
+        c = { fechaLevantamiento: nowISO(), diagnostico: diag }; logTxt = 'Levantamiento del técnico';
+      }
+      if (k === 'rec') { c = { fechaRecibido: nowISO() }; logTxt = 'Recibido: inicia el SLA de atención'; }
+      if (k === 'ini') { c = { estatus: 'EN_PROCESO', fechaInicio: nowISO() }; logTxt = 'Inicio de trabajos'; }
+      if (k === 'cul') {
+        const trab = cuerpo.querySelector('#ppTrab').value.trim();
+        if (!cuenta('despues')) { UI.toast('Tome al menos una foto del después.', 'err'); return; }
+        if (!trab) { UI.toast('Describa los trabajos realizados.', 'err'); cuerpo.querySelector('#ppTrab').classList.add('err'); return; }
+        c = { estatus: 'CULMINADA', fechaCulminacion: nowISO(), trabajos: trab, materialesTecnico: cuerpo.querySelector('#ppMat').value.trim() };
+        logTxt = 'Culminación del técnico';
+      }
+      if (k === 'pdf') { Reporte.abrir(id); return; }
+      if (!c) return;
+      ocupado = true; if (btn) btn.disabled = true;
+      try {
+        await DB.actualizar('ordenes', id, c);
+        Object.assign(local, c);
+        DB.log('PASO', 'ordenes', o.folio, logTxt);
+        if (k === 'cul') { const s = slaInfo(local); UI.toast(`Trabajo finalizado en ${fDur(s.transc)}: ${s.cumple ? 'dentro' : 'fuera'} del SLA. Recabe las firmas.`, s.cumple ? 'ok' : 'err', 6000); }
+        else UI.toast(PASOS_TEC.find(p => p.k === k).l + ' registrado.', 'ok');
+        pintar();
+      } catch (e) { UI.toast('No se pudo guardar: ' + e.message, 'err'); if (btn) btn.disabled = false; }
+      finally { ocupado = false; }
+    };
+
+    cuerpo.addEventListener('click', e => {
+      const b = e.target.closest('[data-pp]');
+      if (b) { paso(b.dataset.pp, b); return; }
+      const f = e.target.closest('[data-pp-firma]');
+      if (f) this.firmar(id, f.dataset.ppFirma, async (clave, nom, ts) => {
+        Object.assign(media, await DB.media(id, true));
+        Object.assign(local, clave === 'firmaEntrega' ? { entregaNombre: nom, fechaFirmaEntrega: ts } : { recibeNombre: nom, fechaFirmaRecibe: ts });
+        pintar();
+        // Ambas firmas capturadas: se entrega la orden y se genera el PDF
+        if (media.firmaEntrega && media.firmaRecibe) await this.entregar(Object.assign({}, local), null);
+      });
+    });
+    pintar();
   }
 };
 
-/* ---------- Vista de órdenes de trabajo ---------- */
+/* ==========================================================================
+   Vista de órdenes (Administrador, Auxiliar y Gerencia)
+   ========================================================================== */
 const ModOT = {
   init() {
-    ['otBuscar', 'otEstatus', 'otCat', 'otEdif'].forEach(id => $('#' + id).addEventListener(id === 'otBuscar' ? 'input' : 'change', () => this.render()));
+    ['otBuscar', 'otEstatus', 'otCat', 'otEdif', 'otTipo'].forEach(id => $('#' + id).addEventListener(id === 'otBuscar' ? 'input' : 'change', () => this.render()));
     $('#otEstatus').innerHTML = opciones([{ v: 'ACTIVAS', l: 'Abiertas' }, ...Object.keys(OT_ESTATUS).map(k => ({ v: k, l: OT_ESTATUS[k].l }))], 'ACTIVAS', 'Todos los estatus');
     $('#otCat').innerHTML = opciones(CATEGORIAS, '', 'Todas las categorías');
+    $('#otTipo').innerHTML = opciones([...Object.keys(TIPOS_EJECUCION).map(k => ({ v: k, l: TIPOS_EJECUCION[k].l })), { v: 'SIN', l: 'Sin definir' }], '', 'Interno y externo');
     $('#otNueva').onclick = () => OT.levantamiento({});
-    $('#otTabla').addEventListener('click', e => {
+    $('#otTecnicos').onclick = () => ModTecnicos.abrir();
+    const abrir = e => {
       const b = e.target.closest('[data-ot]'); if (!b) return;
       if (b.dataset.acc === 'pdf') Reporte.abrir(b.dataset.ot); else OT.abrir(b.dataset.ot);
-    });
+    };
+    $('#otTabla').addEventListener('click', abrir);
+    $('#otExternos').addEventListener('click', abrir);
   },
   render() {
     const eds = $('#otEdif'), ev = eds.value;
     eds.innerHTML = opciones(Areas.edificios(), ev, 'Todos los edificios');
     $('#otNueva').hidden = !can('capture');
+    $('#otTecnicos').hidden = !can('config');
     const todas = ST.ordenes, ab = todas.filter(o => OT_ABIERTAS.includes(o.estatus));
     const fuera = ab.filter(o => !o.fechaCulminacion && slaInfo(o).estado === 'excedido').length;
+    const porRec = ab.filter(o => slaInfo(o).pendiente).length;
     const porEnt = todas.filter(o => o.estatus === 'CULMINADA').length;
     const mes = ymdLocal().slice(0, 7);
     const entMes = todas.filter(o => o.estatus === 'ENTREGADA' && String(o.fechaEntrega || '').slice(0, 7) === mes).length;
     const cerr = todas.filter(o => o.fechaCulminacion && o.estatus !== 'CANCELADA');
     const cumpl = cerr.length ? Math.round(cerr.filter(o => slaInfo(o).cumple).length / cerr.length * 100) : null;
-    const prom = cerr.length ? cerr.reduce((s, o) => s + slaInfo(o).transc, 0) / cerr.length : null;
     $('#otKpis').innerHTML = [
       kpi(ab.length, 'Órdenes abiertas', `${fuera} fuera de SLA`, fuera ? 'k-rojo' : 'k-morado'),
+      kpi(porRec, 'Por recibir', 'Técnicos sin confirmar', porRec ? 'k-ambar' : 'k-verde'),
+      kpi(ab.filter(o => o.tipoEjecucion === 'EXTERNO').length, 'Con proveedor externo', 'En seguimiento', 'k-ambar'),
       kpi(porEnt, 'Por entregar', 'Culminadas sin firmas', porEnt ? 'k-ambar' : 'k-verde'),
       kpi(entMes, 'Entregadas este mes', MESES_L[new Date().getMonth()], 'k-verde'),
-      kpi(cumpl == null ? '—' : cumpl + ' %', 'Cumplimiento de SLA', `${cerr.length} órdenes culminadas`, cumpl == null ? 'k-azul' : cumpl >= 90 ? 'k-verde' : cumpl >= 75 ? 'k-ambar' : 'k-rojo'),
-      kpi(prom == null ? '—' : fDur(prom).replace(/ \d+ min$/, ''), 'Tiempo medio de atención', 'Levantamiento → culminación', 'k-azul')
+      kpi(cumpl == null ? '—' : cumpl + ' %', 'Cumplimiento de SLA', `${cerr.length} órdenes culminadas`, cumpl == null ? 'k-azul' : cumpl >= 90 ? 'k-verde' : cumpl >= 75 ? 'k-ambar' : 'k-rojo')
     ].join('');
 
-    const q = norm($('#otBuscar').value), es = $('#otEstatus').value, ca = $('#otCat').value, ed = $('#otEdif').value;
+    // Bandeja anclada de proveedores externos (seguimiento corporativo)
+    const ext = ab.filter(o => o.tipoEjecucion === 'EXTERNO').sort((a, b) => String(a.agendaEjecucion || '9').localeCompare(String(b.agendaEjecucion || '9')) || String(otGeneracion(a)).localeCompare(String(otGeneracion(b))));
+    $('#otExtBloque').hidden = !ext.length || esTecnico();
+    $('#otExternos').innerHTML = ext.length ? `<table class="tbl"><thead><tr><th>Folio</th><th>Proveedor</th><th>Ubicación</th><th>Ejecución agendada</th><th>Estatus</th><th>Días abierta</th><th>SLA</th><th></th></tr></thead><tbody>
+      ${ext.map(o => { const d = Math.floor((Date.now() - new Date(otGeneracion(o))) / 86400000); return `<tr>
+        <td class="mono"><b>${esc(o.folio)}</b></td><td><b>${esc(o.proveedor || o.ejecutor || '—')}</b></td>
+        <td>${esc(o.oficina)}<br><span class="muted">${esc(tituloEdificio(o.edificio))}</span></td>
+        <td>${o.agendaEjecucion ? fFechaHora(o.agendaEjecucion) : '<span class="txt-ambar">Sin agendar</span>'}</td>
+        <td>${OT.tag(o)}</td><td class="num${d > 7 ? ' txt-rojo' : ''}">${d}</td><td style="min-width:160px">${slaHTML(o, true)}</td>
+        <td class="acc"><button class="btn btn-sm" data-ot="${esc(o.id)}">Abrir</button></td></tr>`; }).join('')}</tbody></table>` : '';
+
+    const q = norm($('#otBuscar').value), es = $('#otEstatus').value, ca = $('#otCat').value, ed = $('#otEdif').value, tp = $('#otTipo').value;
     const f = todas.filter(o => (!es || (es === 'ACTIVAS' ? OT_ABIERTAS.includes(o.estatus) : o.estatus === es)) && (!ca || o.categoria === ca) && (!ed || o.edificio === ed) &&
-      (!q || norm([o.folio, o.oficina, o.hallazgo, o.solicitanteNombre, o.ejecutor, o.origen && o.origen.folio].join(' ')).includes(q)))
-      .sort((a, b) => String(b.fechaLevantamiento).localeCompare(String(a.fechaLevantamiento)));
+      (!tp || (tp === 'SIN' ? !o.tipoEjecucion : o.tipoEjecucion === tp)) &&
+      (!q || norm([o.folio, o.oficina, o.hallazgo, o.solicitanteNombre, OT.ejecutorTxt(o), o.origen && o.origen.folio].join(' ')).includes(q)))
+      .sort((a, b) => String(otGeneracion(b)).localeCompare(String(otGeneracion(a))));
     $('#otConteo').textContent = `${f.length} de ${todas.length}`;
-    $('#otTabla').innerHTML = f.length ? `<table class="tbl"><thead><tr><th>Folio</th><th>Origen</th><th>Ubicación</th><th>Categoría</th><th>Prioridad</th><th>Estatus</th><th>Tiempo de atención</th><th class="num">Costo</th><th></th></tr></thead><tbody>
+    $('#otTabla').innerHTML = f.length ? `<table class="tbl"><thead><tr><th>Folio</th><th>Origen</th><th>Ubicación</th><th>Categoría</th><th>Ejecución</th><th>Estatus</th><th>Tiempo de atención</th><th class="num">Costo</th><th></th></tr></thead><tbody>
       ${f.map(o => `<tr class="clic" data-ot="${esc(o.id)}">
-        <td class="mono"><b>${esc(o.folio)}</b><br><span class="muted">${fFechaHora(o.fechaLevantamiento)}</span></td>
+        <td class="mono"><b>${esc(o.folio)}</b><br><span class="muted">${fFechaHora(otGeneracion(o))}</span></td>
         <td>${esc(OT.origenTxt(o))}</td>
         <td><b>${esc(o.oficina)}</b><br><span class="muted">${esc(tituloEdificio(o.edificio))}</span></td>
-        <td>${esc(o.categoria)}</td><td>${tagPrioridad(o.prioridad)}</td><td>${tag(OT_ESTATUS, o.estatus)}</td>
+        <td>${esc(o.categoria)}<br>${tagPrioridad(o.prioridad)}</td>
+        <td>${OT.tipoTag(o)}<br><span class="muted">${esc(OT.ejecutorTxt(o))}</span></td>
+        <td>${OT.tag(o)}</td>
         <td style="min-width:170px">${slaHTML(o)}</td><td class="num">${money(OT.costos(o).total)}</td>
         <td class="acc"><button class="btn btn-sm" data-ot="${esc(o.id)}">Abrir</button>
         ${['CULMINADA', 'ENTREGADA'].includes(o.estatus) ? `<button class="btn btn-sm btn-ghost" data-ot="${esc(o.id)}" data-acc="pdf">Reporte</button>` : ''}</td></tr>`).join('')}</tbody></table>`
-      : UI.vacio(todas.length ? 'Ninguna orden coincide con los filtros.' : 'Sin órdenes de trabajo. Inicie con un levantamiento en sitio.', can('capture') ? '<button class="btn btn-primary" onclick="OT.levantamiento({})">Nuevo levantamiento</button>' : '');
+      : UI.vacio(todas.length ? 'Ninguna orden coincide con los filtros.' : 'Sin órdenes de trabajo. Genere la primera desde una solicitud, una incidencia o un levantamiento.', can('capture') ? '<button class="btn btn-primary" onclick="OT.levantamiento({})">Nueva orden de trabajo</button>' : '');
+  }
+};
+
+/* ==========================================================================
+   Mis órdenes (vista móvil del Operador técnico)
+   ========================================================================== */
+const ModMisOT = {
+  init() {
+    $('#moLista').addEventListener('click', e => { const c = e.target.closest('[data-ot]'); if (c) OT.pipeline(c.dataset.ot); });
+  },
+  render() {
+    $('#moNombre').textContent = SESION.nombre || '';
+    const mias = ST.ordenes.filter(o => o.tecnicoId && o.tecnicoId === SESION.tecnicoId && o.estatus !== 'CANCELADA');
+    const abiertas = mias.filter(o => OT_ABIERTAS.includes(o.estatus))
+      .sort((a, b) => String(a.agendaLevantamiento || a.agendaEjecucion || '9').localeCompare(String(b.agendaLevantamiento || b.agendaEjecucion || '9')) || ordenIdx(['ALTA', 'MEDIA', 'BAJA'], a.prioridad) - ordenIdx(['ALTA', 'MEDIA', 'BAJA'], b.prioridad));
+    const entregadas = mias.filter(o => o.estatus === 'ENTREGADA').sort((a, b) => String(b.fechaEntrega).localeCompare(String(a.fechaEntrega))).slice(0, 10);
+    const cnt = p => abiertas.filter(o => OT.paso(o) === p).length;
+    $('#moResumen').innerHTML = [
+      ['Por levantar', cnt(0)], ['Por recibir', cnt(1)], ['Por iniciar', cnt(2)], ['En proceso', cnt(3)], ['Por firmar', cnt(4)]
+    ].map(([l, n]) => `<div class="mo-k${n ? ' on' : ''}"><b>${n}</b><span>${l}</span></div>`).join('');
+    const tarjeta = o => {
+      const p = OT.paso(o);
+      const ag = o.agendaLevantamiento && p === 0 ? `Levantamiento ${fFechaHora(o.agendaLevantamiento)}` : o.agendaEjecucion ? `Ejecución ${fFechaHora(o.agendaEjecucion)}` : '';
+      return `<button type="button" class="mo-card prio-${(o.prioridad || 'MEDIA').toLowerCase()}" data-ot="${esc(o.id)}">
+        <div class="mo-top"><span class="mono">${esc(o.folio)}</span>${tagPrioridad(o.prioridad)}</div>
+        <div class="mo-of">${esc(o.oficina)}</div>
+        <div class="mo-ub">${esc(tituloEdificio(o.edificio))}, ${esc(tituloNivel(o.nivel).toLowerCase())}. ${esc(o.categoria)}</div>
+        ${ag ? `<div class="mo-ag">${esc(ag)}</div>` : ''}
+        <div class="mo-prog" aria-label="Paso ${Math.min(p + 1, 5)} de 5">${PASOS_TEC.map((_, i) => `<i class="${i < p ? 'ok' : i === p ? 'act' : ''}"></i>`).join('')}</div>
+        <div class="mo-paso">${p < 5 ? `Paso ${p + 1} de 5: ${PASOS_TEC[p].l}` : 'Entregada'}</div>
+        ${o.estatus !== 'ENTREGADA' ? slaHTML(o, true) : ''}
+      </button>`;
+    };
+    $('#moLista').innerHTML = (abiertas.length ? abiertas.map(tarjeta).join('') : UI.vacio('No tiene órdenes de trabajo pendientes.')) +
+      (entregadas.length ? `<h3 class="mo-sec">Entregadas recientemente</h3>${entregadas.map(tarjeta).join('')}` : '');
+  }
+};
+
+/* ==========================================================================
+   Catálogo de Operadores técnicos (solo Administrador)
+   ========================================================================== */
+const ModTecnicos = {
+  abrir() {
+    if (!can('config')) return;
+    const pintar = () => {
+      const ts = Tecnicos.todos();
+      return ts.length ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Nombre</th><th>Teléfono</th><th>PIN</th><th>OT abiertas</th><th>Estado</th><th></th></tr></thead><tbody>
+        ${ts.map(t => `<tr><td><b>${esc(t.nombre)}</b></td><td>${esc(t.telefono || '—')}</td><td class="mono">••${esc(String(t.pin || '').slice(-2))}</td>
+          <td class="num">${ST.ordenes.filter(o => o.tecnicoId === t.id && OT_ABIERTAS.includes(o.estatus)).length}</td>
+          <td>${t.activo === false ? '<span class="tag t-gris">Inactivo</span>' : '<span class="tag t-verde">Activo</span>'}</td>
+          <td class="acc"><button class="btn btn-sm" data-tec="${esc(t.id)}">Editar</button></td></tr>`).join('')}</tbody></table></div>`
+        : UI.vacio('Sin técnicos registrados. Cada técnico entra al tablero con el rol Operador técnico y su PIN personal.');
+    };
+    const m = UI.modal({
+      titulo: 'Operadores técnicos', ancho: '760px', sub: 'Personal interno al que se asignan órdenes de trabajo.',
+      cuerpo: '<div id="tecLista"></div>',
+      acciones: [{ texto: 'Cerrar' }, { texto: 'Agregar técnico', clase: 'btn-primary', cierra: false, fn: () => { this.editar(null, () => { m.q('#tecLista').innerHTML = pintar(); }); return false; } }]
+    });
+    m.q('#tecLista').innerHTML = pintar();
+    m.q('#tecLista').addEventListener('click', e => { const b = e.target.closest('[data-tec]'); if (b) this.editar(b.dataset.tec, () => { m.q('#tecLista').innerHTML = pintar(); }); });
+  },
+  editar(id, despues) {
+    const t = id ? Tecnicos.porId(id) : null;
+    UI.modal({
+      titulo: t ? 'Editar técnico' : 'Agregar técnico', ancho: '520px',
+      cuerpo: `<label class="fl"><span>Nombre completo</span><input id="tNom" value="${esc(t ? t.nombre : '')}"></label>
+        <div class="fg2">
+          <label class="fl"><span>Teléfono</span><input id="tTel" inputmode="tel" value="${esc(t ? t.telefono || '' : '')}"></label>
+          <label class="fl"><span>PIN personal (${PIN_TECNICO.min} a ${PIN_TECNICO.max} dígitos)</span><input id="tPin" inputmode="numeric" autocomplete="off" value="${esc(t ? t.pin || '' : '')}"></label>
+        </div>
+        ${t ? `<label class="chk"><input type="checkbox" id="tAct"${t.activo !== false ? ' checked' : ''}> Activo (al desactivarlo pierde el acceso de inmediato)</label>` : ''}
+        <p class="hint">Entregue el PIN al técnico en persona. Entra con el rol Operador técnico y solo ve sus órdenes asignadas.</p>`,
+      acciones: [{ texto: 'Cancelar' }, {
+        texto: 'Guardar', clase: 'btn-primary', fn: async mm => {
+          const nombre = mayus(mm.q('#tNom').value), pin = mm.q('#tPin').value.trim();
+          if (!nombre) { UI.toast('El nombre es obligatorio.', 'err'); return false; }
+          if (!new RegExp(`^\\d{${PIN_TECNICO.min},${PIN_TECNICO.max}}$`).test(pin)) { UI.toast(`El PIN debe tener de ${PIN_TECNICO.min} a ${PIN_TECNICO.max} dígitos.`, 'err'); return false; }
+          if (Object.values(AUTH_CODES).includes(pin)) { UI.toast('El PIN no puede coincidir con un código de rol.', 'err'); return false; }
+          if (ST.tecnicos.some(x => x.id !== (t && t.id) && String(x.pin) === pin)) { UI.toast('Ese PIN ya pertenece a otro técnico.', 'err'); return false; }
+          if (ST.tecnicos.some(x => x.id !== (t && t.id) && norm(x.nombre) === norm(nombre))) { UI.toast('Ya existe un técnico con ese nombre.', 'err'); return false; }
+          const d = { nombre, telefono: mm.q('#tTel').value.trim(), pin };
+          if (t) { d.activo = mm.q('#tAct').checked; await DB.actualizar('tecnicos', t.id, d); DB.log('EDICION', 'tecnicos', nombre, d.activo ? 'Activo' : 'Inactivo'); }
+          else { d.activo = true; await DB.guardar('tecnicos', d); DB.log('ALTA', 'tecnicos', nombre, ''); }
+          UI.toast('Técnico guardado.', 'ok');
+          setTimeout(() => despues && despues(), 150);
+        }
+      }]
+    });
   }
 };
 
 UI.registrar('ordenes', ModOT);
+UI.registrar('misordenes', ModMisOT);

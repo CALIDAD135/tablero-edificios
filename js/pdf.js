@@ -28,6 +28,7 @@ const Reporte = {
     const media = await DB.media(otId, true).catch(() => ({}));
     this.d = await this.datos(o, media);
     this.opc.fotos = this.d.fotosAntes.length + this.d.fotosDespues.length > 0;
+    if (esTecnico()) this.opc.costos = false;
     this.abierto = true;
     document.body.classList.add('rp-open');
     $('#rpView').classList.add('open');
@@ -51,7 +52,8 @@ const Reporte = {
       solicitante: o.solicitanteNombre || '', correo: o.solicitanteCorreo || '', tel: o.solicitanteTel || '',
       edificio: o.edificio, nivel: o.nivel, oficina: o.oficina, departamento: o.departamento || '',
       responsable: Areas.responsable(a) || '', categoria: o.categoria, prioridad: (PRIORIDADES[o.prioridad] || {}).l || '',
-      solicitado: o.hallazgo || '', trabajos: o.trabajos || '', ejecutor: o.ejecutor || '',
+      solicitado: o.hallazgo || '', trabajos: o.trabajos || '', ejecutor: OT.ejecutorTxt(o), diagnostico: o.diagnostico || '',
+      tipoEjecucion: o.tipoEjecucion || '', fechaRecibido: o.fechaRecibido || '',
       materiales: lista(o.materiales), costos: OT.costos(o),
       fechaSolicitud: o.fechaSolicitud, fechaLevantamiento: o.fechaLevantamiento, fechaCulminacion: o.fechaCulminacion, fechaEntrega: o.fechaEntrega,
       sla: s, tiempoTotal: o.fechaCulminacion && o.fechaSolicitud ? new Date(o.fechaCulminacion) - new Date(o.fechaSolicitud) : null,
@@ -65,7 +67,8 @@ const Reporte = {
 
   slaTexto(d) {
     if (!d.fechaCulminacion) return 'En curso';
-    return `${fDur(d.sla.transc)} (meta ${d.sla.metaH} h): ${d.sla.cumple ? 'cumple' : 'excede'}`;
+    const desde = d.tipoEjecucion === 'INTERNO' && d.fechaRecibido ? ', desde el recibido' : '';
+    return `${fDur(d.sla.transc)} (meta ${d.sla.metaH} h${desde}): ${d.sla.cumple ? 'cumple' : 'excede'}`;
   },
 
   /* ---------- Panel izquierdo + hoja ---------- */
@@ -80,7 +83,7 @@ const Reporte = {
       </div>
       ${o.estatus !== 'ENTREGADA' ? `<div class="aviso">Vista previa. El reporte queda definitivo al entregar el trabajo con ambas firmas.</div>` : ''}
       <div class="rp-sec"><h3>Contenido</h3>
-        <label class="chk"><input type="checkbox" id="rpCostos"${this.opc.costos ? ' checked' : ''}> Incluir materiales con costos</label>
+        <label class="chk"${esTecnico() ? ' hidden' : ''}><input type="checkbox" id="rpCostos"${this.opc.costos ? ' checked' : ''}> Incluir materiales con costos</label>
         <label class="chk"><input type="checkbox" id="rpFotos"${this.opc.fotos ? ' checked' : ''}${d.fotosAntes.length + d.fotosDespues.length ? '' : ' disabled'}> Incluir evidencia fotográfica (${d.fotosAntes.length + d.fotosDespues.length})</label>
       </div>
       <div class="rp-sec"><h3>Observaciones de entrega</h3>
@@ -140,6 +143,7 @@ const Reporte = {
       <div class="rp-row r3">${lin('Edificio', d.edificio)}${lin('Nivel o planta', d.nivel)}${lin('Oficina', d.oficina)}</div>
       <div class="rp-row r3">${lin('Departamento', d.departamento)}${lin('Responsable del área', d.responsable)}${lin('Categoría y prioridad', `${d.categoria}, prioridad ${d.prioridad.toLowerCase()}`)}</div>
       <div class="rp-txt"><span class="rp-l">Descripción de lo solicitado</span><p>${esc(d.solicitado)}</p></div>
+      ${d.diagnostico && d.diagnostico !== d.solicitado ? `<div class="rp-txt"><span class="rp-l">Diagnóstico inicial del técnico</span><p>${esc(d.diagnostico)}</p></div>` : ''}
       <h4 class="rp-bar">2. Trabajos realizados</h4>
       <div class="rp-row r1">${lin('Ejecutado por', d.ejecutor)}</div>
       <div class="rp-txt"><span class="rp-l">Descripción de los trabajos</span><p>${esc(d.trabajos || 'Pendiente de registrar.')}</p></div>
@@ -277,6 +281,7 @@ const Reporte = {
     fila([{ l: 'Edificio', v: d.edificio, w: .25 }, { l: 'Nivel o planta', v: d.nivel, w: .25 }, { l: 'Oficina', v: d.oficina, w: .5, negrita: true }]);
     fila([{ l: 'Departamento', v: d.departamento, w: .25 }, { l: 'Responsable del área', v: d.responsable, w: .4 }, { l: 'Categoría y prioridad', v: `${d.categoria}, prioridad ${d.prioridad.toLowerCase()}`, w: .35 }]);
     parrafo('Descripción de lo solicitado', d.solicitado);
+    if (d.diagnostico && d.diagnostico !== d.solicitado) parrafo('Diagnóstico inicial del técnico', d.diagnostico);
 
     y += 3; barra(`${n++}. Trabajos realizados`);
     fila([{ l: 'Ejecutado por', v: d.ejecutor, w: 1 }]);

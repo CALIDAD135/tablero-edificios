@@ -9,6 +9,7 @@
         incidencias/{id}       reportes por categoría
         tareas/{id}            Kanban PHVA de cuadrillas
         mantenimientos/{id}    mantenimientos_programados (+ ejecuciones)
+        tecnicos/{id}          operadores técnicos (nombre, teléfono, PIN, activo) — Fase 2
         ordenes/{id}           ordenes_trabajo (SLA, materiales, firmas)
         consumos/{id}          consumos_servicios (agua m³ / energía kWh)
         contadores/…           consecutivos atómicos de folios
@@ -22,12 +23,12 @@
    ========================================================================== */
 
 const ST = {
-  areas: [], directorio: [], incidencias: [], tareas: [], mantenimientos: [],
+  areas: [], directorio: [], incidencias: [], tareas: [], mantenimientos: [], tecnicos: [],
   ordenes: [], consumos: [], bitacora: [], solicitudes: [], meta: {},
   cargado: {}
 };
 
-const NODOS_LISTA = ['areas', 'directorio', 'incidencias', 'tareas', 'mantenimientos', 'ordenes', 'consumos'];
+const NODOS_LISTA = ['areas', 'directorio', 'incidencias', 'tareas', 'mantenimientos', 'ordenes', 'consumos', 'tecnicos'];
 
 /* ---------- Utilidades de identidad y fecha (compartidas) ---------- */
 function uid() {
@@ -134,7 +135,8 @@ const DB = {
     const e = {
       ts: nowISO(), accion, entidad: entidad || '—', ref: ref || '—',
       detalle: detalle ? String(detalle).slice(0, 300) : '',
-      rol: (typeof SESION !== 'undefined' && SESION.rol) || 'publico'
+      rol: (typeof SESION !== 'undefined' && SESION.rol) || 'publico',
+      usuario: (typeof SESION !== 'undefined' && SESION.nombre) || ''
     };
     return this.db.ref(`${FB.root}/bitacora/${id}`).set(e).catch(err => console.warn('bitácora', err));
   },
@@ -157,7 +159,7 @@ const DB = {
   /* ---------- Solicitudes públicas ---------- */
   gestionSolicitud(folio, campos) {
     campos.actualizado = nowISO();
-    campos.por = (typeof SESION !== 'undefined' && SESION.rol) || '';
+    campos.por = (typeof SESION !== 'undefined' && (SESION.nombre || SESION.rol)) || '';
     return this.db.ref(`${FB.publico}/solicitudes/${folio}/gestion`).update(limpiarUndefined(campos));
   },
 

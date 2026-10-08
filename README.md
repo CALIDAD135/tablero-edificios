@@ -17,7 +17,8 @@ Tablero de control de instalaciones y mantenimiento de activos de Innovaciones T
 | `js/mod-incidencias.js` | Módulo 2: incidencias y Kanban PHVA |
 | `js/mod-mantenimientos.js` | Módulo 3: mantenimientos programados |
 | `js/mod-kpis.js` | Módulo 4: inversión y consumo de servicios |
-| `js/mod-ot.js` | Módulo 5: órdenes de trabajo, levantamiento, SLA y firmas |
+| `js/mod-ot.js` | Módulo 5: órdenes de trabajo, ejecución interna o externa, pipeline del técnico, Mis órdenes y catálogo de técnicos |
+| `js/mod-calendario.js` | Calendario de mantenimientos, OT y levantamientos (FullCalendar 6) |
 | `js/mod-solicitudes.js` | Módulo 6: bandeja de solicitudes, liga y QR; bitácora |
 | `js/pdf.js` | Reporte de entrega de Trabajos Realizados (vista dividida y PDF jsPDF) |
 | `js/solicitud.js` | Lógica del formulario público |
@@ -63,8 +64,11 @@ Ajustes del listado original: ítem 37 «SITEMAS» se corrigió a «SISTEMAS» e
 | Administrador | 0386 | Todo, incluida la estructura de áreas, eliminaciones, carga inicial y bitácora |
 | Auxiliar | 0387 | Captura y operación diaria; en áreas solo modifica responsable y notas |
 | Gerencia | 0388 | Solo lectura, consulta de reportes y exportación |
+| Operador técnico | PIN personal | Solo sus OT asignadas en vista móvil; pipeline Levantamiento, Recibido, Inicio, Culminación y Firmas |
 
-Los códigos se cambian en `js/config.js` (`AUTH_CODES`).
+Los códigos se cambian en `js/config.js` (`AUTH_CODES`). Los PIN de los técnicos se administran en **Órdenes de trabajo > Técnicos**.
+
+La Fase 2 (Operador técnico, tipo de ejecución y calendario) se detalla en `FASE2_CAMBIOS.md`.
 
 ## 6. Flujo operativo (enfoque a procesos, ISO 9001:2015)
 

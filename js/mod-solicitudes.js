@@ -93,7 +93,7 @@ const ModSolicitudes = {
     const todas = ST.solicitudes;
     const cnt = k => todas.filter(s => solEstado(s) === k).length;
     const conOT = todas.filter(s => s.gestion && s.gestion.otId);
-    const tResp = conOT.map(s => { const o = OT.porId(s.gestion.otId); return o ? new Date(o.fechaLevantamiento) - new Date(solFecha(s)) : null; }).filter(x => x != null && x >= 0);
+    const tResp = conOT.map(s => { const o = OT.porId(s.gestion.otId); return o ? new Date(otGeneracion(o)) - new Date(solFecha(s)) : null; }).filter(x => x != null && x >= 0);
     $('#solKpis').innerHTML = [
       kpi(cnt('NUEVA'), 'Nuevas', 'Sin revisar', cnt('NUEVA') ? 'k-ambar' : 'k-verde'),
       kpi(cnt('EN_REVISION'), 'En revisión', 'Por convertir en OT', 'k-azul'),
@@ -179,7 +179,7 @@ const ModBitacora = {
     const q = norm($('#bitBuscar').value);
     const f = ST.bitacora.filter(b => (!es.value || b.entidad === es.value) && (!q || norm([b.accion, b.ref, b.detalle, b.rol].join(' ')).includes(q)));
     $('#bitTabla').innerHTML = f.length ? `<table class="tbl"><thead><tr><th>Fecha</th><th>Rol</th><th>Acción</th><th>Entidad</th><th>Referencia</th><th>Detalle</th></tr></thead><tbody>
-      ${f.map(b => `<tr><td>${fFechaHora(b.ts)}</td><td>${esc((ROLES[b.rol] || {}).label || b.rol)}</td><td><b>${esc(b.accion)}</b></td><td>${esc(b.entidad)}</td><td class="mono">${esc(b.ref)}</td><td class="desc">${esc(b.detalle)}</td></tr>`).join('')}
+      ${f.map(b => `<tr><td>${fFechaHora(b.ts)}</td><td>${esc((ROLES[b.rol] || {}).label || b.rol)}${b.usuario ? `<br><span class="muted">${esc(b.usuario)}</span>` : ''}</td><td><b>${esc(b.accion)}</b></td><td>${esc(b.entidad)}</td><td class="mono">${esc(b.ref)}</td><td class="desc">${esc(b.detalle)}</td></tr>`).join('')}
       </tbody></table>` : UI.vacio('Sin movimientos registrados.');
   }
 };

@@ -42,12 +42,34 @@ const AUTH_CODES = {
   admin:    '0386',   // Coordinador de Activos Fijos (Lic. Marcos)
   auxiliar: '0387',   // Auxiliar: captura y operación diaria
   gerencia: '0388'    // Gerencia: solo lectura
+  // tecnico: cada Operador técnico entra con su PIN personal, que el Administrador
+  //          registra en Órdenes de trabajo > Técnicos (nodo tableros/edificios/tecnicos)
 };
 const ROLES = {
-  admin:    { label: 'Administrador', permisos: ['capture', 'edit_areas', 'delete', 'seed', 'bitacora', 'config'] },
-  auxiliar: { label: 'Auxiliar',      permisos: ['capture'] },
-  gerencia: { label: 'Gerencia',      permisos: [] }
+  admin:    { label: 'Administrador',     permisos: ['capture', 'edit_areas', 'delete', 'seed', 'bitacora', 'config'] },
+  auxiliar: { label: 'Auxiliar',          permisos: ['capture'] },
+  gerencia: { label: 'Gerencia',          permisos: [] },
+  // Vista móvil exclusiva de sus OT asignadas: sin configuración, áreas, finanzas ni eliminaciones
+  tecnico:  { label: 'Operador técnico',  permisos: ['tecnico'] }
 };
+const PIN_TECNICO = { min: 4, max: 6 };   // longitud permitida del PIN personal
+
+/* ---------- Fase 2: ejecución interna o externa y calendario ---------- */
+const TIPOS_EJECUCION = {
+  INTERNO: { l: 'Personal interno',  c: 't-azul' },
+  EXTERNO: { l: 'Proveedor externo', c: 't-ambar' }
+};
+// Colores del calendario (también se usan en la leyenda)
+const CAL_COLORES = {
+  mant:          '#0f7a8a',   // mantenimiento programado
+  mantEjecutado: '#0f7a4e',   // mantenimiento ejecutado
+  mantVencido:   '#b81f30',   // mantenimiento vencido
+  interno:       '#0b4f9e',   // OT de personal interno
+  externo:       '#c77700',   // OT de proveedor externo
+  levantamiento: '#5a3fb8'    // levantamiento agendado en sitio
+};
+// Duración con que se pintan en el calendario los eventos sin hora de término (minutos)
+const CAL_DURACION = { ejecucion: 120, levantamiento: 60 };
 
 /* ---------- Catálogos ---------- */
 // Selector ESTRICTO de categorías para incidencias, órdenes de trabajo y solicitudes

@@ -59,8 +59,27 @@ function sumarDias(ymd, dias) {
 function diasEntre(a, b) { return Math.round((aFecha(b) - aFecha(a)) / 86400000); }
 
 /* ---------- Sesión y permisos ---------- */
-let SESION = { rol: null };
+let SESION = { rol: null, tecnicoId: '', nombre: '' };
 function can(p) { return !!(SESION.rol && ROLES[SESION.rol] && ROLES[SESION.rol].permisos.includes(p)); }
+function esTecnico() { return SESION.rol === 'tecnico'; }
+
+/* ---------- Operadores técnicos (catálogo en Firebase: tableros/edificios/tecnicos) ---------- */
+const Tecnicos = {
+  todos() { return ST.tecnicos.slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))); },
+  activos() { return this.todos().filter(t => t.activo !== false); },
+  porId(id) { return ST.tecnicos.find(t => t.id === id); },
+  nombre(id) { const t = this.porId(id); return t ? t.nombre : ''; }
+};
+
+/* ---------- Fechas base de una OT ----------
+   fechaGeneracion: alta de la OT (en OT anteriores a la Fase 2 equivale al levantamiento).
+   SLA de atención: en OT de personal interno corre desde la confirmación de recibido del técnico;
+   en OT de proveedor externo y en las anteriores, desde el levantamiento. */
+function otGeneracion(o) { return o.fechaGeneracion || o.fechaLevantamiento || o.createdAt || ''; }
+function slaInicio(o) {
+  if (o.tipoEjecucion === 'INTERNO' && o.tecnicoId) return o.fechaRecibido || (o.fechaCulminacion ? otGeneracion(o) : '');
+  return o.fechaRecibido || o.fechaLevantamiento || otGeneracion(o);
+}
 
 /* ---------- Catálogos derivados ---------- */
 const OT_ABIERTAS = ['LEVANTADA', 'EN_PROCESO', 'CULMINADA'];
@@ -127,7 +146,12 @@ function ubicacion(areaId) {
 function slaInfo(o) {
   const metaH = Number(o.slaHorasMeta) || (PRIORIDADES[o.prioridad] || PRIORIDADES.MEDIA).h;
   const meta = metaH * 3600000;
-  const ini = new Date(o.fechaLevantamiento || o.createdAt).getTime();
+  const iniISO = slaInicio(o);
+  if (!iniISO) {
+    const reaccion = Math.max(0, Date.now() - new Date(otGeneracion(o)).getTime());
+    return { metaH, meta, transc: 0, pct: 0, cerrado: false, estado: 'pendiente', cumple: null, pendiente: true, reaccion };
+  }
+  const ini = new Date(iniISO).getTime();
   const cerrado = !!o.fechaCulminacion;
   const fin = cerrado ? new Date(o.fechaCulminacion).getTime() : Date.now();
   const transc = Math.max(0, fin - ini);
@@ -138,6 +162,8 @@ function slaInfo(o) {
 function slaHTML(o, compacto) {
   if (o.estatus === 'CANCELADA') return '<span class="muted">—</span>';
   const s = slaInfo(o);
+  if (s.pendiente) return `<div class="sla sla-pend" data-sla-ot="${esc(o.id)}" data-c="${compacto ? 1 : 0}">
+    <div class="sla-txt"><span>Por recibir</span> <b>${fDur(s.reaccion)}</b>${compacto ? '' : ' desde la asignación'}</div></div>`;
   const w = Math.min(100, Math.round(s.pct * 100));
   const txt = s.cerrado ? (s.cumple ? 'Cumplió' : 'Excedió') : (s.estado === 'excedido' ? 'Excedido' : s.estado === 'riesgo' ? 'En riesgo' : 'En tiempo');
   return `<div class="sla sla-${s.estado}${s.cerrado ? ' sla-fin' : ''}" data-sla-ot="${esc(o.id)}" data-c="${compacto ? 1 : 0}">
@@ -185,6 +211,8 @@ const UI = {
   registrar(id, mod) { this.vistas[id] = mod; },
 
   ir(id) {
+    if (esTecnico()) id = 'misordenes';                       // el técnico solo ve sus órdenes
+    else if (id === 'misordenes') id = 'tablero';
     if (!this.vistas[id]) return;
     if (id === 'bitacora' && !can('bitacora')) return;
     this.vista = id;
@@ -199,6 +227,11 @@ const UI = {
   refresh(origen) {
     this.badges();
     if (!SESION.rol) return;
+    // Un técnico dado de baja pierde la sesión de inmediato
+    if (esTecnico() && ST.cargado.tecnicos) {
+      const t = Tecnicos.porId(SESION.tecnicoId);
+      if (!t || t.activo === false) { this.toast('Su usuario de técnico fue desactivado.', 'err'); window.App && App.cerrarSesion(); return; }
+    }
     if (origen === 'conexion') return;
     this.render();
     if (Drawer.abierto && Drawer.rerender) Drawer.rerender();
@@ -223,7 +256,8 @@ const UI = {
       incidencias: ST.incidencias.filter(i => i.estatus === 'ABIERTA').length,
       ordenes: ST.ordenes.filter(o => OT_ABIERTAS.includes(o.estatus)).length,
       solicitudes: ST.solicitudes.filter(s => !s.gestion || s.gestion.estado === 'NUEVA').length,
-      mantenimientos: ST.mantenimientos.filter(p => p.activo !== false && Mant.proxima(p) && Mant.proxima(p) < ymdLocal()).length
+      mantenimientos: ST.mantenimientos.filter(p => p.activo !== false && Mant.proxima(p) && Mant.proxima(p) < ymdLocal()).length,
+      misordenes: ST.ordenes.filter(o => o.tecnicoId && o.tecnicoId === SESION.tecnicoId && OT_ABIERTAS.includes(o.estatus)).length
     };
     Object.keys(n).forEach(k => {
       const el = $(`.nav-tab[data-v="${k}"] .cnt`);
@@ -344,6 +378,7 @@ document.addEventListener('keydown', e => {
   const t = UI._pila[UI._pila.length - 1];
   if (t) { if (!t.el.classList.contains('m-fija')) t.cerrar(); return; }
   if (Reporte.abierto) { Reporte.cerrar(); return; }
+  if (esTecnico()) return;
   if (Drawer.abierto) Drawer.cerrar();
 });
 
@@ -649,6 +684,7 @@ const Firma = {
    Exportación general a Excel (respaldo de todos los nodos)
    ========================================================================== */
 function exportarExcel() {
+  if (esTecnico()) return;
   if (typeof XLSX === 'undefined') { UI.toast('La librería de Excel no se cargó; revise su conexión.', 'err'); return; }
   const wb = XLSX.utils.book_new();
   const hoja = (nombre, filas) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas.length ? filas : [{ Sin: 'registros' }]), nombre);
@@ -666,11 +702,14 @@ function exportarExcel() {
     const s = slaInfo(o);
     return {
       Folio: o.folio, Origen: o.origen ? `${o.origen.tipo} ${o.origen.folio || ''}` : 'LEVANTAMIENTO', Edificio: o.edificio, Nivel: o.nivel, Oficina: o.oficina,
+      'Tipo de ejecución': (TIPOS_EJECUCION[o.tipoEjecucion] || { l: 'Sin definir' }).l, 'Técnico o proveedor': OT.ejecutorTxt(o),
+      Generación: fFechaHora(otGeneracion(o)), 'Recibido por técnico': fFechaHora(o.fechaRecibido),
+      'Levantamiento agendado': fFechaHora(o.agendaLevantamiento), 'Ejecución agendada': fFechaHora(o.agendaEjecucion),
       Departamento: o.departamento || '', Categoría: o.categoria, Prioridad: (PRIORIDADES[o.prioridad] || {}).l || '', Solicitante: o.solicitanteNombre || '',
       'Fecha solicitud': fFechaHora(o.fechaSolicitud), Levantamiento: fFechaHora(o.fechaLevantamiento), Inicio: fFechaHora(o.fechaInicio),
       Culminación: fFechaHora(o.fechaCulminacion), Entrega: fFechaHora(o.fechaEntrega), 'Tiempo de atención (h)': +(s.transc / 3600000).toFixed(2),
       'Meta SLA (h)': s.metaH, 'Cumple SLA': s.cerrado ? (s.cumple ? 'Sí' : 'No') : 'En curso', Estatus: (OT_ESTATUS[o.estatus] || {}).l || o.estatus,
-      Ejecutor: o.ejecutor || '', 'Costo materiales': OT.costos(o).materiales, 'Mano de obra': OT.costos(o).manoObra, 'Costo total': OT.costos(o).total,
+      Diagnóstico: o.diagnostico || '', 'Costo materiales': OT.costos(o).materiales, 'Mano de obra': OT.costos(o).manoObra, 'Costo total': OT.costos(o).total,
       Entrega_firma: o.entregaNombre || '', Recibe_firma: o.recibeNombre || ''
     };
   }));

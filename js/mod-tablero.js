@@ -123,7 +123,7 @@ const ModTablero = {
     const x = est.m[a.id], nv = nivelArea(x);
     const p = a.responsableId ? Personas.porId(a.responsableId) : null;
     const incs = ST.incidencias.filter(i => i.areaId === a.id && ['ABIERTA', 'EN_ATENCION'].includes(i.estatus));
-    const ots = ST.ordenes.filter(o => o.areaId === a.id).sort((u, v) => String(v.fechaLevantamiento).localeCompare(String(u.fechaLevantamiento)));
+    const ots = ST.ordenes.filter(o => o.areaId === a.id).sort((u, v) => String(otGeneracion(v)).localeCompare(String(otGeneracion(u))));
     const mants = ST.mantenimientos.filter(m => m.activo !== false && (m.alcance === 'GENERAL' || (m.alcance === 'EDIFICIO' && m.edificio === a.edificio) || (m.alcance === 'AREA' && m.areaId === a.id)));
     const ultSol = [...ST.ordenes.filter(o => o.areaId === a.id && o.solicitanteNombre), ...ST.incidencias.filter(i => i.areaId === a.id && i.solicitanteNombre)]
       .sort((u, v) => String(v.createdAt).localeCompare(String(u.createdAt)))[0];
@@ -150,7 +150,7 @@ const ModTablero = {
       ${incs.length ? `<ul class="dr-lista">${incs.map(i => `<li><div><b>${esc(i.folio)}</b> ${tag(INC_ESTATUS, i.estatus)} ${tagPrioridad(i.prioridad)}</div>
         <div>${esc(i.categoria)}: ${esc(i.descripcion)}</div><div class="muted">${fFechaHora(i.fechaReporte)}</div></li>`).join('')}</ul>` : '<p class="muted dr-v">Ninguna.</p>'}
       <h4 class="dr-sec">Órdenes de trabajo <span>${ots.length}</span></h4>
-      ${ots.length ? `<ul class="dr-lista">${ots.slice(0, 8).map(o => `<li class="dr-click" data-ot="${esc(o.id)}"><div><b>${esc(o.folio)}</b> ${tag(OT_ESTATUS, o.estatus)}</div>
+      ${ots.length ? `<ul class="dr-lista">${ots.slice(0, 8).map(o => `<li class="dr-click" data-ot="${esc(o.id)}"><div><b>${esc(o.folio)}</b> ${OT.tag(o)} ${OT.tipoTag(o)}</div>
         <div>${esc(o.categoria)}: ${esc(o.hallazgo || '')}</div>${slaHTML(o, true)}</li>`).join('')}</ul>` : '<p class="muted dr-v">Sin órdenes registradas.</p>'}
       <h4 class="dr-sec">Mantenimientos que aplican <span>${mants.length}</span></h4>
       ${mants.length ? `<ul class="dr-lista">${mants.map(m => { const px = Mant.proxima(m); return `<li><div><b>${esc(m.rubro)}</b> ${Mant.tagEstado(m)}</div>

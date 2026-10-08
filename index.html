@@ -16,6 +16,9 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<!-- Fase 2: calendario (FullCalendar 6, incluye sus estilos) y traducción al español -->
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.15/locales/es.global.min.js"></script>
 </head>
 <body>
 
@@ -30,8 +33,9 @@
       <button type="button" class="rol" data-rol="admin" aria-pressed="false">Administrador<small>Coordinación</small></button>
       <button type="button" class="rol" data-rol="auxiliar" aria-pressed="false">Auxiliar<small>Captura diaria</small></button>
       <button type="button" class="rol" data-rol="gerencia" aria-pressed="false">Gerencia<small>Solo lectura</small></button>
+      <button type="button" class="rol" data-rol="tecnico" aria-pressed="false">Operador técnico<small>Mis órdenes</small></button>
     </div>
-    <label class="fl"><span>Código de acceso</span><input type="password" id="loginCodigo" autocomplete="off" inputmode="numeric" placeholder="Seleccione su rol e ingrese su código"></label>
+    <label class="fl"><span>Código de acceso o PIN</span><input type="password" id="loginCodigo" autocomplete="off" inputmode="numeric" placeholder="Seleccione su rol e ingrese su código"></label>
     <div class="login-err" id="loginErr" role="alert"></div>
     <button type="button" class="btn btn-primary btn-grande" id="loginBtn">Entrar</button>
     <div class="login-st" id="loginStatus">Conectando con Firebase…</div>
@@ -57,10 +61,12 @@
     <button class="nav-tab" role="tab" data-v="incidencias">Incidencias <span class="cnt" hidden></span></button>
     <button class="nav-tab" role="tab" data-v="tareas">Tareas PHVA</button>
     <button class="nav-tab" role="tab" data-v="mantenimientos">Mantenimientos <span class="cnt" hidden></span></button>
+    <button class="nav-tab" role="tab" data-v="calendario">Calendario</button>
     <button class="nav-tab" role="tab" data-v="ordenes">Órdenes de trabajo <span class="cnt" hidden></span></button>
     <button class="nav-tab" role="tab" data-v="solicitudes">Solicitudes <span class="cnt" hidden></span></button>
     <button class="nav-tab" role="tab" data-v="indicadores">Indicadores</button>
     <button class="nav-tab" role="tab" data-v="bitacora" hidden>Bitácora</button>
+    <button class="nav-tab" role="tab" data-v="misordenes" hidden>Mis órdenes <span class="cnt" hidden></span></button>
   </nav>
 </header>
 
@@ -154,18 +160,46 @@
     </div>
   </section>
 
+  <!-- ============ FASE 2: CALENDARIO ============ -->
+  <section class="vista" id="v-calendario" hidden>
+    <div class="vista-head">
+      <div><h2>Calendario de mantenimientos y órdenes</h2><p>Mantenimientos programados, ejecuciones agendadas y levantamientos en sitio. Seleccione un evento para ver su detalle.</p></div>
+      <div class="filtros"><select id="calTecnico" aria-label="Técnico"></select></div>
+    </div>
+    <div class="kpis" id="calResumen"></div>
+    <div class="bloque">
+      <div class="cal-filtros" id="calFiltros" aria-label="Capas del calendario"></div>
+      <div id="calendario" class="cal-wrap"></div>
+    </div>
+  </section>
+
+  <!-- ============ FASE 2: MIS ÓRDENES (OPERADOR TÉCNICO) ============ -->
+  <section class="vista" id="v-misordenes" hidden>
+    <div class="mo-head"><h2>Mis órdenes de trabajo</h2><p id="moNombre"></p></div>
+    <div class="mo-resumen" id="moResumen"></div>
+    <div class="mo-lista" id="moLista"></div>
+  </section>
+
   <!-- ============ MÓDULO 5: ÓRDENES DE TRABAJO ============ -->
   <section class="vista" id="v-ordenes" hidden>
     <div class="vista-head">
-      <div><h2>Órdenes de trabajo</h2><p>El SLA corre desde el levantamiento hasta la culminación. Al entregar con ambas firmas se genera el reporte en PDF.</p></div>
-      <button type="button" class="btn btn-primary" id="otNueva">Nuevo levantamiento</button>
+      <div><h2>Órdenes de trabajo</h2><p>Personal interno: el SLA corre desde que el técnico confirma de recibido. Proveedor externo: desde el levantamiento. Al entregar con ambas firmas se genera el reporte en PDF.</p></div>
+      <div class="filtros">
+        <button type="button" class="btn" id="otTecnicos">Técnicos</button>
+        <button type="button" class="btn btn-primary" id="otNueva">Nueva orden de trabajo</button>
+      </div>
     </div>
     <div class="kpis" id="otKpis"></div>
+    <div class="bloque bloque-ext" id="otExtBloque" hidden>
+      <h3>Seguimiento de proveedores externos</h3>
+      <p class="hint">Órdenes abiertas ejecutadas por proveedor; no requieren técnico de la app.</p>
+      <div class="tblwrap" id="otExternos"></div>
+    </div>
     <div class="bloque">
       <div class="bloque-head"><h3>Órdenes <span class="muted" id="otConteo"></span></h3>
         <div class="filtros">
           <input type="search" id="otBuscar" placeholder="Folio, oficina, solicitante" aria-label="Buscar orden">
-          <select id="otEstatus" aria-label="Estatus"></select><select id="otCat" aria-label="Categoría"></select><select id="otEdif" aria-label="Edificio"></select>
+          <select id="otEstatus" aria-label="Estatus"></select><select id="otTipo" aria-label="Tipo de ejecución"></select><select id="otCat" aria-label="Categoría"></select><select id="otEdif" aria-label="Edificio"></select>
         </div></div>
       <div class="tblwrap" id="otTabla"></div>
     </div>
@@ -265,6 +299,7 @@
 <script src="js/mod-tablero.js"></script>
 <script src="js/mod-incidencias.js"></script>
 <script src="js/mod-mantenimientos.js"></script>
+<script src="js/mod-calendario.js"></script>
 <script src="js/mod-ot.js"></script>
 <script src="js/mod-solicitudes.js"></script>
 <script src="js/mod-kpis.js"></script>

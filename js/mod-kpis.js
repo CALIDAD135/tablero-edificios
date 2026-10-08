@@ -28,7 +28,7 @@ const ModKPI = {
     const r = [];
     ST.ordenes.filter(o => o.estatus !== 'CANCELADA').forEach(o => {
       const c = OT.costos(o); if (!c.total) return;
-      const fecha = ymdLocal(o.fechaCulminacion || o.fechaLevantamiento);
+      const fecha = ymdLocal(o.fechaCulminacion || o.fechaLevantamiento || otGeneracion(o));
       const base = { fecha, mes: fecha.slice(0, 7), edificio: o.edificio || 'SIN UBICACIÓN', departamento: o.departamento || 'SIN ASIGNAR', categoria: o.categoria || 'Sin categoría', ref: o.folio, ubic: o.oficina };
       if (c.materiales) r.push(Object.assign({ concepto: 'Materiales y refacciones', monto: c.materiales }, base));
       if (c.manoObra) r.push(Object.assign({ concepto: 'Mano de obra', monto: c.manoObra }, base));
