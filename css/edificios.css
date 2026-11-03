@@ -617,3 +617,52 @@ body.modo-tecnico #btnRespaldo { display: none !important }
 .ok-respaldo { font-size: 13px; background: #dcf3e8; border: 1px solid #a7dcc3; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; color: #0a5e3b }
 .m-respaldo .seg { flex-direction: column; gap: 8px }
 @media (max-width: 620px) { .rs-estado { grid-template-columns: 1fr } }
+
+/* ==========================================================================
+   Fase 4: inventario de activos
+   ========================================================================== */
+.af-filtro { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; background: #e9f2fd; border: 1px solid #b6d2f1; color: var(--deep); border-radius: 20px; padding: 3px 4px 3px 12px; margin-bottom: 10px }
+.af-pend { font-size: 11px; font-weight: 600; color: var(--amb) }
+.af-mas { padding: 8px 10px; margin: 0 }
+.btn.txt-rojo { color: var(--red) }
+
+/* Ficha: columna de identificación (fotos y etiqueta) y columna de datos */
+.m-activo .m-head h2 { font-size: 22px; letter-spacing: .2px; font-variant-numeric: tabular-nums }
+.af-ficha { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 22px; align-items: start }
+.af-izq { position: sticky; top: 0; display: flex; flex-direction: column; gap: 10px }
+.af-fotos { grid-template-columns: 1fr 1fr; margin: 0 }
+.af-fotos .foto:first-child { grid-column: 1 / -1 }
+.af-etq { border: 1px dashed var(--line); border-radius: 12px; padding: 10px; background: var(--panel2); min-height: 80px; display: flex; align-items: center; justify-content: center }
+.af-etq-cv { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 1px 3px rgba(11, 42, 82, .18) }
+.af-etq-acc { display: flex; gap: 6px; flex-wrap: wrap }
+.af-etq-acc .btn { flex: 1 1 auto }
+.af-izq .hint { margin: 0 }
+.af-nombre { font-size: 19px; color: var(--deep); font-stretch: 92%; line-height: 1.2 }
+.af-desc { color: var(--muted); margin: 3px 0 10px; max-width: 70ch }
+.af-der > .dr-acc { margin: 10px 0 14px }
+.af-plan-acc { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px }
+
+/* Historial: línea de tiempo con color por tipo de registro */
+.af-tl { list-style: none; border-left: 2px solid var(--line); margin-left: 6px; padding-left: 16px; display: flex; flex-direction: column; gap: 10px; font-size: 12.5px }
+.af-tl > li { position: relative; display: grid; grid-template-columns: 112px 1fr; gap: 10px; padding: 2px 6px; border-radius: 6px }
+.af-tl > li::before { content: ''; position: absolute; left: -23px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--panel) }
+.af-tl > li.af-tl-ot::before { background: var(--mor) }
+.af-tl > li.af-tl-mant::before { background: var(--ok) }
+.af-tl > li.af-tl-baja::before { background: var(--red) }
+.af-tl-f { color: var(--soft); font-variant-numeric: tabular-nums }
+.af-tl > li.dr-click:hover { background: #f5f9ff }
+
+.af-scan { display: flex; flex-direction: column; gap: 10px }
+.af-scan .liga { margin: 0 }
+.af-seg { flex-direction: column; gap: 8px }
+.af-dr-acc { margin-top: 8px }
+
+@media (max-width: 860px) {
+  .af-ficha { grid-template-columns: 1fr }
+  .af-izq { position: static }
+  /* En el teléfono las fotos se reducen a miniaturas para que los datos y las acciones queden a la vista */
+  .af-fotos { grid-template-columns: repeat(3, 1fr) }
+  .af-fotos .foto:first-child { grid-column: auto }
+  .af-etq { max-width: 300px }
+}
+@media (max-width: 520px) { .af-tl > li { grid-template-columns: 1fr; gap: 2px } }
