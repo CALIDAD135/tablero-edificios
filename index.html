@@ -21,6 +21,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.15/locales/es.global.min.js"></script>
 <!-- Fase 3: compresión del respaldo ZIP (misma versión que Control Vehicular) -->
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<!-- Fase 4: lectura de etiquetas QR desde una fotografía (inventario de activos) -->
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 </head>
 <body>
 
@@ -61,6 +63,7 @@
   </div>
   <nav class="nav" role="tablist" aria-label="Módulos">
     <button class="nav-tab" role="tab" data-v="tablero" aria-selected="true">Tablero</button>
+    <button class="nav-tab" role="tab" data-v="activos">Activos <span class="cnt" hidden></span></button>
     <button class="nav-tab" role="tab" data-v="incidencias">Incidencias <span class="cnt" hidden></span></button>
     <button class="nav-tab" role="tab" data-v="tareas">Tareas PHVA</button>
     <button class="nav-tab" role="tab" data-v="mantenimientos">Mantenimientos <span class="cnt" hidden></span></button>
@@ -99,6 +102,33 @@
         <span><i class="l-mv"></i>Mantenimiento vencido</span>
         <span id="tbGeneral"></span>
       </div>
+    </div>
+  </section>
+
+  <!-- ============ MÓDULO 7 (FASE 4): INVENTARIO DE ACTIVOS ============ -->
+  <section class="vista" id="v-activos" hidden>
+    <div class="vista-head">
+      <div><h2>Inventario de activos</h2><p>Equipos, mobiliario e instalaciones de cada área con folio permanente, etiqueta QR, resguardante, plan de mantenimiento e historial de movimientos.</p></div>
+      <div class="filtros">
+        <button type="button" class="btn" id="afEscanear">Identificar por QR</button>
+        <button type="button" class="btn" id="afEtiquetas">Etiquetas QR</button>
+        <button type="button" class="btn btn-primary" id="afNuevo">Alta de activo</button>
+      </div>
+    </div>
+    <div class="chips" id="afClases"></div>
+    <div class="kpis" id="afKpis"></div>
+    <div class="g2">
+      <div class="bloque"><h3>Activos por clase</h3><div class="chart" id="afChClase"></div></div>
+      <div class="bloque"><h3>Estado de mantenimiento por edificio</h3><div class="chart" id="afChEdif"></div></div>
+    </div>
+    <div class="bloque" style="margin-top:16px">
+      <div class="bloque-head"><h3>Registro de activos <span class="muted" id="afConteo"></span></h3>
+        <div class="filtros">
+          <input type="search" id="afBuscar" placeholder="Folio, tipo, marca, serie, área o resguardante" aria-label="Buscar activo">
+          <select id="afEdif" aria-label="Edificio"></select><select id="afEstatus" aria-label="Estado"></select><select id="afMant" aria-label="Mantenimiento"></select>
+        </div></div>
+      <div id="afAreaFiltro"></div>
+      <div class="tblwrap" id="afTabla"></div>
     </div>
   </section>
 
@@ -305,6 +335,7 @@
 <script src="js/mod-calendario.js"></script>
 <script src="js/mod-ot.js"></script>
 <script src="js/mod-solicitudes.js"></script>
+<script src="js/mod-activos.js"></script>
 <script src="js/mod-kpis.js"></script>
 <script src="js/pdf.js"></script>
 <script src="js/mod-respaldo.js"></script>

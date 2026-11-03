@@ -19,6 +19,7 @@ Tablero de control de instalaciones y mantenimiento de activos de Innovaciones T
 | `js/mod-kpis.js` | Módulo 4: inversión y consumo de servicios |
 | `js/mod-ot.js` | Módulo 5: órdenes de trabajo, ejecución interna o externa, pipeline del técnico, Mis órdenes y catálogo de técnicos |
 | `js/mod-calendario.js` | Calendario de mantenimientos, OT y levantamientos (FullCalendar 6), color por estatus |
+| `js/mod-activos.js` | Módulo 7: inventario de activos, folio de inventario, etiqueta QR, movimientos, bajas y plan de mantenimiento por activo |
 | `js/mod-respaldo.js` | Respaldo ZIP y depuración de evidencia (solo Administrador) |
 | `js/mod-solicitudes.js` | Módulo 6: bandeja de solicitudes, liga y QR; bitácora |
 | `js/pdf.js` | Reporte de entrega de Trabajos Realizados (vista dividida y PDF jsPDF) |
@@ -70,7 +71,7 @@ Ajustes del listado original: ítem 37 «SITEMAS» se corrigió a «SISTEMAS» e
 Los códigos se cambian en `js/config.js` (`AUTH_CODES`). Los PIN de los técnicos se administran en **Órdenes de trabajo > Técnicos**.
 
 La Fase 2 (Operador técnico, tipo de ejecución y calendario) se detalla en `FASE2_CAMBIOS.md`.
-La Fase 3 (calendarización del técnico, levantamiento con materiales, evidencia del reporte y respaldo ZIP) se detalla en `FASE3_CAMBIOS.md`.
+La Fase 3 (calendarización del técnico, levantamiento con materiales, evidencia del reporte y respaldo ZIP) se detalla en `FASE3_CAMBIOS.md`. La Fase 4 (inventario de activos con etiqueta QR) se detalla en `FASE4_CAMBIOS.md`.
 
 ## 6. Flujo operativo (enfoque a procesos, ISO 9001:2015)
 
@@ -93,7 +94,10 @@ Levantamiento en sitio ───────────┘                     
 |---|---|
 | `APP.formato` | Código y revisión del formato en el reporte (actualmente provisional: FO-AFI-ED-01 Rev. 0) |
 | `CATEGORIAS` | Selector estricto de 14 categorías |
-| `RUBROS_MANT` | 8 rubros del programa de mantenimiento |
+| `RUBROS_MANT` | 16 rubros del programa de mantenimiento (8 originales y 8 de la Fase 4) |
+| `CLASES_ACTIVO` | 11 clases de activo con subtipos, especificaciones técnicas, rubro, periodicidad y vida útil sugeridos |
+| `FOLIO_ACTIVO` | Prefijo y dígitos del folio de inventario (AF-CLI-0001) |
+| `ESTATUS_ACTIVO`, `CONDICION_ACTIVO`, `MOTIVOS_BAJA` | Catálogos de estado, condición física y motivos de baja |
 | `PRIORIDADES` | Metas de SLA en horas |
 | `PERSONAL_AF` | Personal autorizado para firmar «Quien entrega» |
 | `DEPARTAMENTOS` | Catálogo para inversión por departamento |
@@ -103,4 +107,4 @@ Levantamiento en sitio ───────────┘                     
 
 - **Plan Spark:** las fotos se comprimen a 1280 px (≈120–200 KB) y se guardan en `edificios_media`, fuera del nodo que se escucha en tiempo real, para no afectar la velocidad del tablero.
 - **Seguridad:** los códigos de acceso viven en el código del sitio y las reglas son abiertas, igual que en los tableros actuales. Cuando se atienda la exposición pública del repositorio, conviene migrar a Firebase Authentication y restringir las reglas por usuario.
-- **Excel:** el botón *Exportar Excel* descarga un libro con áreas, directorio, incidencias, órdenes, mantenimientos, ejecuciones, consumos, solicitudes, tareas y bitácora.
+- **Excel:** el botón *Exportar Excel* descarga un libro con áreas, directorio, incidencias, órdenes, mantenimientos, ejecuciones, consumos, solicitudes, tareas, activos, movimientos de activos y bitácora.
