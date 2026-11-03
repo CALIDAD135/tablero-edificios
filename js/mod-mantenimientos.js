@@ -2,7 +2,9 @@
    CONTROL DE EDIFICIOS · IES
    js/mod-mantenimientos.js — Módulo 3: Mantenimientos programados
    Rubros: Aires Acondicionados, Fumigación, Extintores, Pintura,
-   Cisternas y Tinacos, Mobiliario, Impermeabilizado y EPP.
+   Cisternas y Tinacos, Mobiliario, Impermeabilizado y EPP, más los 8 rubros
+   de la Fase 4 para el inventario de activos (ver RUBROS_MANT en config.js).
+   Un plan con activoId pertenece a un activo del inventario (mod-activos.js).
    ========================================================================== */
 
 /* Equivalencia rubro → categoría de OT (para prellenar órdenes de trabajo) */
@@ -36,6 +38,11 @@ const Mant = {
     return `<span class="tag ${m[0]}">${m[1]}</span>`;
   },
   alcanceTxt(p) {
+    // Fase 4: un plan vinculado a un activo muestra su folio antes del área
+    if (p.activoFolio) return `${p.activoFolio}, ${this._alcance(p)}`;
+    return this._alcance(p);
+  },
+  _alcance(p) {
     if (p.alcance === 'AREA') { const a = Areas.porId(p.areaId); return a ? `${a.oficina} (${tituloEdificio(a.edificio)})` : 'Área no encontrada'; }
     if (p.alcance === 'EDIFICIO') return tituloEdificio(p.edificio) || 'Edificio';
     return 'Todas las instalaciones';
@@ -148,6 +155,7 @@ const ModMant = {
     const alc = p ? p.alcance : 'GENERAL';
     const m = UI.modal({
       titulo: p ? 'Editar plan de mantenimiento' : 'Nuevo plan de mantenimiento', ancho: '720px',
+      sub: p && p.activoFolio ? `Vinculado al activo ${esc(p.activoFolio)}. Si cambia el área, registre también el traslado del activo.` : '',
       cuerpo: `<div class="fg3">
           <label class="fl"><span>Rubro</span><select id="mRub">${opciones(RUBROS_MANT, p ? p.rubro : this.rubro, 'Seleccione')}</select></label>
           <label class="fl"><span>Tipo</span><select id="mTipo">${opciones(['Preventivo', 'Correctivo'], p ? p.tipo : 'Preventivo')}</select></label>
@@ -234,9 +242,10 @@ const ModMant = {
   },
 
   generarOT(p) {
+    const act = p.activoId && typeof Activos !== 'undefined' ? Activos.porId(p.activoId) : null;   // Fase 4
     OT.levantamiento({
-      areaId: p.alcance === 'AREA' ? p.areaId : '', categoria: RUBRO_A_CATEGORIA[p.rubro] || '', prioridad: 'MEDIA',
-      hallazgo: `Mantenimiento ${String(p.tipo || '').toLowerCase()} programado de ${p.rubro}: ${p.descripcion || ''}`,
+      areaId: p.alcance === 'AREA' ? p.areaId : '', categoria: (act && Activos.categoria(act)) || RUBRO_A_CATEGORIA[p.rubro] || '', prioridad: 'MEDIA',
+      hallazgo: `Mantenimiento ${String(p.tipo || '').toLowerCase()} programado de ${p.rubro}: ${p.descripcion || ''}${act ? `. Activo ${act.folio}, ${Activos.nombre(act)}${act.serie ? `, serie ${act.serie}` : ''}` : ''}`,
       ejecutor: p.proveedor || '', origen: { tipo: 'MANTENIMIENTO', id: p.id, folio: p.rubro },
       ubicacionGeneral: p.alcance !== 'AREA' ? (p.alcance === 'EDIFICIO' ? p.edificio : 'TODAS LAS INSTALACIONES') : ''
     });

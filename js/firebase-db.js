@@ -12,10 +12,12 @@
         tecnicos/{id}          operadores técnicos (nombre, teléfono, PIN, activo) — Fase 2
         ordenes/{id}           ordenes_trabajo (SLA, materiales, firmas)
         consumos/{id}          consumos_servicios (agua m³ / energía kWh)
+        activos/{id}           inventario de activos de instalaciones (+ movimientos) — Fase 4
         contadores/…           consecutivos atómicos de folios
         bitacora/{id}          trazabilidad de cambios
         meta                   versión y semillado
      tableros/edificios_media/{otId}    firmas y fotos (bajo demanda)
+     tableros/edificios_media/{activoId} fotografías del activo foto_0…foto_2 (bajo demanda)
      tableros/edificios_publico/
         catalogo/{areaId}      edificio/nivel/oficina para el formulario público
         solicitudes/{folio}    tickets del formulario (+ gestion)
@@ -24,11 +26,11 @@
 
 const ST = {
   areas: [], directorio: [], incidencias: [], tareas: [], mantenimientos: [], tecnicos: [],
-  ordenes: [], consumos: [], bitacora: [], solicitudes: [], meta: {},
+  ordenes: [], consumos: [], bitacora: [], solicitudes: [], activos: [], meta: {},
   cargado: {}
 };
 
-const NODOS_LISTA = ['areas', 'directorio', 'incidencias', 'tareas', 'mantenimientos', 'ordenes', 'consumos', 'tecnicos'];
+const NODOS_LISTA = ['areas', 'directorio', 'incidencias', 'tareas', 'mantenimientos', 'ordenes', 'consumos', 'tecnicos', 'activos'];
 
 /* ---------- Utilidades de identidad y fecha (compartidas) ---------- */
 function uid() {
@@ -127,6 +129,22 @@ const DB = {
       if (r && r.committed) return `${prefijo}-${dia}-${String(r.snapshot.val()).padStart(3, '0')}`;
     } catch (e) { console.warn('reservarFolio', e); }
     return `${prefijo}-${dia}-T${Date.now().toString(36).slice(-5).toUpperCase()}`;
+  },
+
+  /* ---------- Folios de inventario (Fase 4) ----------
+     Consecutivo permanente por clase, reservado en bloque con transacción atómica:
+     AF-CLI-0001, AF-CLI-0002… Una alta múltiple de n piezas reserva n folios seguidos.
+     Sin conexión en 8 s se emiten folios provisionales con marca de tiempo. */
+  async reservarFoliosActivo(clase, n = 1) {
+    n = Math.max(1, Number(n) || 1);
+    const fmt = k => `${FOLIO_ACTIVO.prefijo}-${clase}-${String(k).padStart(FOLIO_ACTIVO.digitos, '0')}`;
+    const ref = this.db.ref(`${FB.root}/contadores/${FOLIO_ACTIVO.prefijo}/${clase}`);
+    try {
+      const r = await conTiempoLimite(ref.transaction(v => (Number(v) || 0) + n), 8000);
+      if (r && r.committed) { const fin = Number(r.snapshot.val()); return Array.from({ length: n }, (_, i) => fmt(fin - n + 1 + i)); }
+    } catch (e) { console.warn('reservarFoliosActivo', e); }
+    const t = Date.now().toString(36).slice(-5).toUpperCase();
+    return Array.from({ length: n }, (_, i) => `${FOLIO_ACTIVO.prefijo}-${clase}-T${t}${n > 1 ? '-' + (i + 1) : ''}`);
   },
 
   /* ---------- Bitácora (trazabilidad ISO 9001:2015, 7.5.3) ---------- */

@@ -46,7 +46,8 @@ const AUTH_CODES = {
   //          registra en Órdenes de trabajo > Técnicos (nodo tableros/edificios/tecnicos)
 };
 const ROLES = {
-  admin:    { label: 'Administrador',     permisos: ['capture', 'edit_areas', 'delete', 'seed', 'bitacora', 'config'] },
+  // baja_activo (Fase 4): solo el Administrador autoriza bajas y reactivaciones de activos
+  admin:    { label: 'Administrador',     permisos: ['capture', 'edit_areas', 'delete', 'seed', 'bitacora', 'config', 'baja_activo'] },
   auxiliar: { label: 'Auxiliar',          permisos: ['capture'] },
   gerencia: { label: 'Gerencia',          permisos: [] },
   // Vista móvil exclusiva de sus OT asignadas: sin configuración, áreas, finanzas ni eliminaciones
@@ -92,6 +93,85 @@ const CAL_ESTATUS = {
 // Depuración sugerida: evidencia de registros cerrados hace más de N días
 const RESPALDO = { diasAntiguedad: 30, palabraConfirmacion: 'LIMPIAR' };
 
+/* ---------- Fase 4: inventario de activos de instalaciones ----------
+   Folio permanente por clase: AF-CLI-0001, AF-MOB-0001… (consecutivo atómico en
+   tableros/edificios/contadores/AF/{clase}). El folio no cambia aunque el activo
+   se traslade, cambie de resguardante o se dé de baja. */
+const FOLIO_ACTIVO = { prefijo: 'AF', digitos: 4 };
+const FOTOS_ACTIVO = ['Vista general', 'Placa de datos o número de serie', 'Ubicación o detalle'];
+const ALTA_MULTIPLE_MAX = 50;          // piezas idénticas por captura (un folio por pieza)
+const ETIQUETA_ACTIVO = { leyenda: 'Propiedad de IES. No retire esta etiqueta.' };
+const ESTATUS_ACTIVO = {
+  EN_USO:         { l: 'En uso',            c: 't-verde' },
+  EN_ALMACEN:     { l: 'En almacén',        c: 't-azul' },
+  EN_REPARACION:  { l: 'En reparación',     c: 't-morado' },
+  FUERA_SERVICIO: { l: 'Fuera de servicio', c: 't-ambar' },
+  BAJA:           { l: 'Baja',              c: 't-gris' }
+};
+const CONDICION_ACTIVO = {
+  BUENO:   { l: 'Bueno',   c: 't-verde' },
+  REGULAR: { l: 'Regular', c: 't-ambar' },
+  MALO:    { l: 'Malo',    c: 't-rojo' }
+};
+const MOTIVOS_BAJA = [
+  'Obsolescencia', 'Daño irreparable', 'Reparación incosteable', 'Robo o extravío', 'Siniestro',
+  'Venta', 'Donación', 'Transferencia a otra sede', 'Destrucción o desecho'
+];
+/* Clases de activo. Cada clase define:
+   l      nombre visible            rubro  rubro del programa de mantenimiento
+   cat    categoría de OT           per    periodicidad sugerida del preventivo (días)
+   vida   vida útil sugerida (años) tipos  subtipos; un objeto {l, rubro, cat, per} ajusta el subtipo
+   specs  campos técnicos propios de la clase: {k, l, ph?, op? (lista), t? ('date' | 'number')} */
+const CLASES_ACTIVO = {
+  CLI: { l: 'Climatización', rubro: 'Aires Acondicionados', cat: 'Aire Acondicionado', per: 90, vida: 10,
+    tipos: ['Minisplit', 'Aire de ventana', 'Cassette', 'Piso-techo', 'Equipo paquete', 'Fan & coil o sistema central', 'Aire portátil'],
+    specs: [{ k: 'capacidad', l: 'Capacidad', ph: '12,000 BTU o 1 TR' }, { k: 'refrigerante', l: 'Refrigerante', op: ['R-410A', 'R-32', 'R-22', 'R-134a', 'Otro'] },
+      { k: 'voltaje', l: 'Voltaje', op: ['115 V', '220 V', '440 V'] }, { k: 'tecnologia', l: 'Tecnología', op: ['Inverter', 'Convencional'] },
+      { k: 'serieCondensadora', l: 'Serie de la condensadora', ph: 'Unidad exterior' }] },
+  VEN: { l: 'Ventilación', rubro: 'Ventilación', cat: 'Electricidad', per: 180, vida: 8,
+    tipos: ['Ventilador de techo', 'Ventilador de pedestal', 'Ventilador de pared', 'Ventilador de torre', 'Extractor de aire', 'Cortina de aire'],
+    specs: [{ k: 'potencia', l: 'Potencia', ph: '75 W' }, { k: 'voltaje', l: 'Voltaje', op: ['115 V', '220 V'] }, { k: 'medida', l: 'Diámetro o medida', ph: '52 in' }] },
+  MOB: { l: 'Mobiliario de oficina', rubro: 'Mobiliario', cat: 'Carpintería', per: 180, vida: 10,
+    tipos: ['Escritorio', 'Silla operativa', 'Silla ejecutiva', 'Silla de visita', 'Mesa de juntas', 'Mesa desmontable de trabajo', 'Anaquel',
+      'Librero', 'Archivero', 'Gabinete o locker', 'Credenza', 'Sillón o sofá', 'Pizarrón', 'Mueble por definir'],
+    specs: [{ k: 'material', l: 'Material', ph: 'Melamina, metal, malla…' }, { k: 'color', l: 'Color' }, { k: 'medidas', l: 'Medidas (largo × ancho × alto)', ph: '120 × 60 × 75 cm' }] },
+  COC: { l: 'Cocina y comedor', rubro: 'Equipos de Cocina', cat: 'Electricidad', per: 90, vida: 8,
+    tipos: ['Refrigerador', 'Frigobar', 'Estufa', 'Parrilla eléctrica', 'Horno de microondas', 'Horno eléctrico', 'Cafetera', 'Despachador de agua',
+      { l: 'Purificador de agua', cat: 'Plomería' }, { l: 'Mueble de autoservicio', cat: 'Carpintería', rubro: 'Mobiliario', per: 180 },
+      { l: 'Tarja', cat: 'Plomería', rubro: 'Muebles Sanitarios' }, 'Campana extractora', { l: 'Mesa de comedor', cat: 'Carpintería', rubro: 'Mobiliario', per: 180 }],
+    specs: [{ k: 'capacidad', l: 'Capacidad', ph: '14 ft³, 30 L, 12 tazas' }, { k: 'energia', l: 'Energía', op: ['Eléctrica', 'Gas LP', 'Gas natural', 'No aplica'] },
+      { k: 'voltaje', l: 'Voltaje', op: ['115 V', '220 V', 'No aplica'] }, { k: 'material', l: 'Material o acabado', ph: 'Acero inoxidable…' }] },
+  SAN: { l: 'Baños y muebles sanitarios', rubro: 'Muebles Sanitarios', cat: 'Plomería', per: 90, vida: 15,
+    tipos: ['Taza o inodoro', 'Mingitorio', 'Lavabo', 'Llave o grifería', 'Fluxómetro', 'Regadera', 'Calentador de agua',
+      { l: 'Secador de manos', cat: 'Electricidad' }, 'Despachador de papel', 'Despachador de jabón', 'Espejo', { l: 'Mampara o división', cat: 'Herrería' }],
+    specs: [{ k: 'material', l: 'Material', ph: 'Porcelana, acero…' }, { k: 'sistema', l: 'Sistema', op: ['Tanque', 'Fluxómetro', 'Sensor', 'Manual', 'Seco o ecológico'] },
+      { k: 'consumo', l: 'Consumo', ph: '4.8 L por descarga' }] },
+  BOM: { l: 'Bombeo e hidráulica', rubro: 'Equipos de Bombeo', cat: 'Plomería', per: 90, vida: 10,
+    tipos: ['Bomba centrífuga', 'Bomba sumergible', 'Bomba presurizadora', 'Equipo hidroneumático', 'Equipo de filtración o suavizador',
+      { l: 'Tinaco', rubro: 'Cisternas y Tinacos', per: 180 }, { l: 'Cisterna', rubro: 'Cisternas y Tinacos', per: 180 }],
+    specs: [{ k: 'potencia', l: 'Potencia', ph: '1 HP' }, { k: 'voltaje', l: 'Voltaje', op: ['115 V', '220 V', '440 V', 'No aplica'] },
+      { k: 'fases', l: 'Alimentación', op: ['Monofásica', 'Trifásica', 'No aplica'] }, { k: 'caudal', l: 'Caudal', ph: '40 L/min' },
+      { k: 'capacidad', l: 'Capacidad', ph: '1,100 L' }] },
+  ACC: { l: 'Puertas, ventanas y accesos', rubro: 'Puertas y Accesos', cat: 'Carpintería', per: 180, vida: 15,
+    tipos: ['Puerta de madera', { l: 'Puerta de aluminio y vidrio', cat: 'Aluminio' }, { l: 'Puerta metálica', cat: 'Herrería' },
+      { l: 'Portón', cat: 'Herrería' }, { l: 'Cortina metálica', cat: 'Herrería' }, { l: 'Ventana', cat: 'Aluminio' }, { l: 'Cancel', cat: 'Aluminio' },
+      { l: 'Cerradura o chapa', cat: 'Herrería' }, { l: 'Control de acceso', cat: 'Electricidad' }, 'Persiana'],
+    specs: [{ k: 'material', l: 'Material' }, { k: 'medidas', l: 'Medidas', ph: '0.90 × 2.10 m' }, { k: 'cerradura', l: 'Cerradura o herraje', ph: 'Chapa de manija, barra antipánico…' }] },
+  ELE: { l: 'Eléctrico e iluminación', rubro: 'Instalación Eléctrica', cat: 'Electricidad', per: 180, vida: 15,
+    tipos: ['Tablero o centro de carga', 'Interruptor general', 'Luminaria', 'Planta de emergencia', 'No-break (UPS)', 'Regulador de voltaje', 'Transformador', 'Banco de capacitores'],
+    specs: [{ k: 'capacidad', l: 'Capacidad', ph: '100 A, 10 kVA, 40 W' }, { k: 'voltaje', l: 'Voltaje', op: ['115 V', '220 V', '440 V', '13.2 kV'] },
+      { k: 'fases', l: 'Fases', op: ['Monofásica', 'Bifásica', 'Trifásica'] }] },
+  SEG: { l: 'Seguridad y protección civil', rubro: 'Protección Civil', cat: 'Electricidad', per: 180, vida: 10,
+    tipos: [{ l: 'Extintor', rubro: 'Extintores', per: 365 }, 'Detector de humo', 'Lámpara de emergencia', 'Alarma', 'Gabinete contra incendio',
+      'Botiquín', 'Señalética', { l: 'Cámara de videovigilancia', cat: 'Redes' }],
+    specs: [{ k: 'agente', l: 'Agente o tipo', op: ['PQS', 'CO2', 'Agua', 'Tipo K', 'No aplica'] }, { k: 'capacidad', l: 'Capacidad', ph: '6 kg' },
+      { k: 'ultimaRecarga', l: 'Última recarga o revisión', t: 'date' }] },
+  TIC: { l: 'Equipo electrónico', rubro: 'Equipo Electrónico', cat: 'Redes', per: 180, vida: 5,
+    tipos: ['Pantalla o televisión', 'Proyector', 'Impresora o multifuncional', 'Teléfono o conmutador', 'Equipo de red (switch o access point)', 'Reloj checador', 'Equipo de audio'],
+    specs: [{ k: 'tamano', l: 'Tamaño o capacidad', ph: '55 in, 24 puertos…' }, { k: 'conectividad', l: 'Conectividad', ph: 'HDMI, Wi-Fi, red…' }] },
+  OTR: { l: 'Otros', rubro: '', cat: '', per: 180, vida: 5, tipos: ['Por definir'], specs: [] }
+};
+
 /* ---------- Catálogos ---------- */
 // Selector ESTRICTO de categorías para incidencias, órdenes de trabajo y solicitudes
 const CATEGORIAS = [
@@ -100,10 +180,12 @@ const CATEGORIAS = [
   'Impermeabilizado', 'Fumigación', 'Redes'
 ];
 
-// Rubros del programa de mantenimiento
+// Rubros del programa de mantenimiento (los 8 originales + 8 de la Fase 4 para el inventario de activos)
 const RUBROS_MANT = [
   'Aires Acondicionados', 'Fumigación', 'Extintores', 'Pintura',
-  'Cisternas y Tinacos', 'Mobiliario', 'Impermeabilizado', 'EPP'
+  'Cisternas y Tinacos', 'Mobiliario', 'Impermeabilizado', 'EPP',
+  'Ventilación', 'Equipos de Cocina', 'Muebles Sanitarios', 'Equipos de Bombeo',
+  'Puertas y Accesos', 'Instalación Eléctrica', 'Protección Civil', 'Equipo Electrónico'
 ];
 
 const PERIODICIDADES = [

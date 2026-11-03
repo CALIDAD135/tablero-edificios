@@ -57,6 +57,7 @@ const Respaldo = {
             <li><b>Datos/respaldo_firebase.json</b>: copia íntegra de la base (sin imágenes) para restauración</li>
             <li><b>Reportes_de_entrega/</b>: PDF firmado de cada orden culminada o entregada, con costos</li>
             <li><b>Evidencias/</b>: una carpeta por OT e incidencia con fotografías y firmas, más su índice CSV</li>
+            <li><b>Evidencias/Activos/</b>: fotografías del inventario de activos (no se borran en la depuración)</li>
           </ul>
           <div class="rs-prog" id="rsProg" hidden><div class="rs-bar"><i id="rsBar"></i></div><p id="rsTxt"></p></div>
           <button type="button" class="btn btn-success btn-grande" id="rsZip">Generar respaldo ZIP</button>
@@ -137,6 +138,22 @@ const Respaldo = {
         }
         media = null;
       }
+      // Fase 4: fotografías del inventario de activos. Se respaldan, pero no entran a la depuración:
+      // identifican al bien durante toda su vida útil.
+      const conFoto = ST.activos.filter(a => !a.fotosDe && a.fotos && Object.values(a.fotos).some(Boolean));
+      let fotosAct = 0;
+      for (let n = 0; n < conFoto.length; n++) {
+        const a = conFoto[n];
+        this.progreso(m, 80 + (n / Math.max(1, conFoto.length)) * 2, `Fotografías de activos (${n + 1} de ${conFoto.length})…`);
+        let media = {};
+        try { media = await DB.mediaServidor(a.id); } catch (e) { fallos++; continue; }
+        Object.keys(media).filter(k => /^foto_\d+$/.test(k) && media[k]).forEach(k => {
+          const nombre = `Evidencias/Activos/${this.limpio(a.folio)}_${this.limpio(a.tipo)}/${this.limpio(FOTOS_ACTIVO[Number(k.split('_')[1])] || k)}.${this.ext(media[k])}`;
+          zip.file(nombre, this.b64(media[k]), { base64: true });
+          indice.push([a.folio, 'Activo', a.oficina || '', (ESTATUS_ACTIVO[a.estatus] || {}).l || '', nombre, 'Fotografía', this.bytes(media[k])]);
+          fotosAct++;
+        });
+      }
       zip.file('Evidencias/INDICE_EVIDENCIAS.csv', this.csv(indice));
 
       zip.file('LEEME.txt',
@@ -151,6 +168,7 @@ const Respaldo = {
         `RESUMEN\r\n` +
         `  Áreas: ${Areas.activas().length}\r\n  Órdenes de trabajo: ${ST.ordenes.length}\r\n  Incidencias: ${ST.incidencias.length}\r\n` +
         `  Solicitudes: ${ST.solicitudes.length}\r\n  Planes de mantenimiento: ${ST.mantenimientos.length}\r\n  Capturas de consumo: ${ST.consumos.length}\r\n` +
+        `  Activos en inventario: ${ST.activos.length} (${fotosAct} fotografías en Evidencias/Activos, excluidas de la depuración)\r\n` +
         `  Archivos de evidencia: ${inv.archivos} (${this.mb(inv.bytes)})${fallos ? `\r\n  No recuperados: ${fallos}` : ''}\r\n` +
         `  Reportes de entrega (PDF): ${pdfs}${!hayPdf ? ' (no se cargó el generador de PDF)' : ''}${pdfFallos ? `\r\n  PDF no generados: ${pdfFallos}` : ''}\r\n\r\n` +
         `Conserve este paquete antes de ejecutar «Borrar fotografías y evidencia antigua».\r\n`);

@@ -257,7 +257,9 @@ const UI = {
       ordenes: ST.ordenes.filter(o => OT_ABIERTAS.includes(o.estatus)).length,
       solicitudes: ST.solicitudes.filter(s => !s.gestion || s.gestion.estado === 'NUEVA').length,
       mantenimientos: ST.mantenimientos.filter(p => p.activo !== false && Mant.proxima(p) && Mant.proxima(p) < ymdLocal()).length,
-      misordenes: ST.ordenes.filter(o => o.tecnicoId && o.tecnicoId === SESION.tecnicoId && OT_ABIERTAS.includes(o.estatus)).length
+      misordenes: ST.ordenes.filter(o => o.tecnicoId && o.tecnicoId === SESION.tecnicoId && OT_ABIERTAS.includes(o.estatus)).length,
+      // Fase 4: activos vigentes con mantenimiento vencido
+      activos: typeof Activos !== 'undefined' ? Activos.vigentes().filter(a => Activos.estadoMant(a) === 'vencido').length : 0
     };
     Object.keys(n).forEach(k => {
       const el = $(`.nav-tab[data-v="${k}"] .cnt`);
@@ -741,6 +743,31 @@ function libroExcel() {
     OT: o.folio, Oficina: o.oficina, Edificio: o.edificio, Técnico: OT.ejecutorTxt(o), Estatus: (OT_ESTATUS[o.estatus] || {}).l || o.estatus,
     Material: x.desc, Cantidad: Number(x.cant) || 0, Unidad: x.unidad || '', Especificación: x.nota || '', Capturó: x.por || '', Actualizado: fFechaHora(x.actualizado)
   }))));
+  // Fase 4: inventario de activos y su historial de movimientos
+  if (typeof Activos !== 'undefined') {
+    hoja('Activos', ST.activos.slice().sort((a, b) => String(a.folio).localeCompare(String(b.folio))).map(a => {
+      const c = Activos.clase(a), v = Activos.valorEstimado(a);
+      return {
+        Folio: a.folio, 'Inventario anterior': a.codigoAnterior || '', Clase: c.l, Tipo: a.tipo || '', Descripción: a.descripcion || '',
+        Marca: a.marca || '', Modelo: a.modelo || '', Serie: a.serie || '',
+        Especificaciones: c.specs.filter(s => a.specs && a.specs[s.k]).map(s => `${s.l}: ${a.specs[s.k]}`).join('; '),
+        Edificio: a.edificio || '', Nivel: a.nivel || '', Oficina: a.oficina || '', Departamento: a.departamento || '', Resguardante: Activos.resguardante(a),
+        Estado: (ESTATUS_ACTIVO[a.estatus] || {}).l || a.estatus || '', Condición: (CONDICION_ACTIVO[a.condicion] || {}).l || '',
+        'Fecha de adquisición': fFecha(a.fechaAdquisicion), Proveedor: a.proveedor || '', Factura: a.factura || '', 'Costo de adquisición': Number(a.costo) || 0,
+        'Vida útil (años)': Activos.vida(a), 'Valor estimado': v == null ? '' : +v.toFixed(2), 'Garantía hasta': fFecha(a.garantiaHasta),
+        'Planes activos': Activos.planesActivos(a).length, 'Estado de mantenimiento': MANT_ACTIVO[Activos.estadoMant(a)].l, 'Próximo mantenimiento': fFecha(Activos.proxima(a)),
+        'Costo de mantenimiento': Activos.costoMant(a), 'Última verificación': a.ultimaVerificacion ? fFechaHora(a.ultimaVerificacion.ts) : '',
+        'Etiqueta impresa': a.etiquetaImpresa ? fFecha(a.etiquetaImpresa) : '', 'Motivo de baja': a.baja ? a.baja.motivo || '' : '', 'Fecha de baja': a.baja ? fFecha(a.baja.fecha) : '',
+        'Documento de baja': a.baja ? a.baja.documento || '' : '', Notas: a.notas || ''
+      };
+    }));
+    hoja('Movimientos de activos', ST.activos.flatMap(a => Activos.movimientos(a).map(m => ({ a, m })))
+      .sort((x, y) => String(y.m.ts).localeCompare(String(x.m.ts)))
+      .map(({ a, m }) => ({
+        Fecha: fFechaHora(m.ts), Folio: a.folio, Tipo: a.tipo || '', Movimiento: MOV_ACTIVO[m.tipo] || m.tipo, Detalle: m.detalle || '',
+        Registró: m.por || '', Rol: (ROLES[m.rol] || {}).label || m.rol || ''
+      })));
+  }
   if (can('bitacora')) hoja('Bitácora', ST.bitacora.map(b => ({ Fecha: fFechaHora(b.ts), Rol: b.rol, Usuario: b.usuario || '', Acción: b.accion, Entidad: b.entidad, Referencia: b.ref, Detalle: b.detalle })));
   return wb;
 }

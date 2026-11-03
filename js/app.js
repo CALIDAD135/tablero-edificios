@@ -2,6 +2,7 @@
    CONTROL DE EDIFICIOS · IES
    js/app.js — Arranque: sesión por rol, navegación y eventos generales
    Fase 2: el Operador técnico entra con su PIN personal y solo ve «Mis órdenes».
+   Fase 4: la liga de la etiqueta QR (?activo=FOLIO) abre la ficha del activo al iniciar sesión.
    ========================================================================== */
 (function () {
   const SKEY = 'edificios_sesion';
@@ -30,6 +31,7 @@
     aplicarRol();
     DB.log('LOGIN', 'sesion', tecnico ? tecnico.nombre : ROLES[rol].label, '');
     UI.refresh('login');
+    ModActivos.revisarPendiente();                          // liga de etiqueta QR (?activo=FOLIO)
   }
   function cerrarSesion() {
     if (SESION.rol) DB.log('LOGOUT', 'sesion', SESION.nombre || ROLES[SESION.rol].label, '');
@@ -81,12 +83,12 @@
   $('#fab').onclick = () => OT.levantamiento({});
 
   // Módulos
-  [ModTablero, ModIncidencias, ModTareas, ModMant, ModCalendario, ModOT, ModMisOT, ModSolicitudes, ModKPI, ModBitacora].forEach(m => {
+  [ModTablero, ModActivos, ModIncidencias, ModTareas, ModMant, ModCalendario, ModOT, ModMisOT, ModSolicitudes, ModKPI, ModBitacora].forEach(m => {
     try { m.init && m.init(); } catch (e) { console.error('init', e); }
   });
 
   // Firebase
-  try { DB.init(origen => UI.refresh(origen)); }
+  try { DB.init(origen => { UI.refresh(origen); ModActivos.revisarPendiente(); }); }
   catch (e) {
     console.error(e);
     $('#loginStatus').textContent = 'No se pudo cargar Firebase. Verifique su conexión a internet.';

@@ -154,7 +154,8 @@ const ModTablero = {
         <div>${esc(o.categoria)}: ${esc(o.hallazgo || '')}</div>${slaHTML(o, true)}</li>`).join('')}</ul>` : '<p class="muted dr-v">Sin órdenes registradas.</p>'}
       <h4 class="dr-sec">Mantenimientos que aplican <span>${mants.length}</span></h4>
       ${mants.length ? `<ul class="dr-lista">${mants.map(m => { const px = Mant.proxima(m); return `<li><div><b>${esc(m.rubro)}</b> ${Mant.tagEstado(m)}</div>
-        <div>${esc(m.descripcion || '')}</div><div class="muted">${esc(Mant.alcanceTxt(m))}. Próxima: ${fFecha(px)}</div></li>`; }).join('')}</ul>` : '<p class="muted dr-v">Sin planes de mantenimiento.</p>'}`;
+        <div>${esc(m.descripcion || '')}</div><div class="muted">${esc(Mant.alcanceTxt(m))}. Próxima: ${fFecha(px)}</div></li>`; }).join('')}</ul>` : '<p class="muted dr-v">Sin planes de mantenimiento.</p>'}
+      ${typeof ModActivos !== 'undefined' ? ModActivos.seccionArea(a) : ''}`;
   },
 
   enlazarDetalle(a) {
@@ -167,6 +168,7 @@ const ModTablero = {
       if (k === 'liga') ModSolicitudes.mostrarLiga(a.id);
     });
     b.querySelectorAll('[data-ot]').forEach(li => li.onclick = () => OT.abrir(li.dataset.ot));
+    if (typeof ModActivos !== 'undefined') ModActivos.enlazarArea(b, a);   // Fase 4: activos del área
   },
 
   /* ---------- Alta y edición de áreas ---------- */
